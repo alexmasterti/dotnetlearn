@@ -6573,6 +6573,952 @@ class Program
   ],
 };
 
+const chTuples: Chapter = {
+  id: 'ch-tuples',
+  title: 'Tuples & Deconstruction',
+  description: 'Lightweight grouping of values',
+  icon: '🪢',
+  lessons: [
+    {
+      id: 'l-tup-1',
+      title: 'Value Tuples',
+      type: 'theory',
+      xp: 15,
+      theory: `# Value Tuples
+
+A **tuple** is a quick way to group a few related values without defining a class. C# 7+ tuples are **value types** — cheap, no heap allocation.
+
+## Anonymous
+
+\`\`\`csharp
+var pair = (1, "alpha");
+Console.WriteLine(pair.Item1);   // 1
+Console.WriteLine(pair.Item2);   // "alpha"
+\`\`\`
+
+## Named members
+
+\`\`\`csharp
+var person = (Name: "Alice", Age: 30);
+Console.WriteLine(person.Name);
+Console.WriteLine(person.Age);
+\`\`\`
+
+Names exist at compile time — they're just sugar over Item1/Item2 — but make code far more readable.
+
+## Tuples as method returns
+
+Without tuples, methods that need to return multiple values used \`out\` or a custom struct. Tuples are simpler:
+
+\`\`\`csharp
+static (int min, int max) FindRange(int[] nums)
+{
+    return (nums.Min(), nums.Max());
+}
+
+var r = FindRange(new[] { 5, 2, 8, 1, 9 });
+Console.WriteLine($"min={r.min} max={r.max}");
+\`\`\`
+
+## Tuple equality
+
+\`\`\`csharp
+var a = (1, "x");
+var b = (1, "x");
+Console.WriteLine(a == b);   // true (compares Item1 + Item2)
+\`\`\`
+
+A tuple equals another tuple if all its components equal pairwise.
+
+## When NOT to use tuples
+
+For values that travel between layers / get serialized / need methods, use a \`record\` or a regular class. Tuples shine for **local** grouping; abuse them and your codebase fills with \`(x, y, z)\` calls where nobody knows what x is.`,
+    },
+    {
+      id: 'l-tup-2',
+      title: 'Deconstruction',
+      type: 'theory',
+      xp: 15,
+      theory: `# Deconstruction
+
+Deconstruction unpacks a tuple (or any deconstructable type) into separate variables in one line:
+
+\`\`\`csharp
+var (name, age) = ("Alice", 30);
+Console.WriteLine(name);   // "Alice"
+Console.WriteLine(age);    // 30
+\`\`\`
+
+## With a method that returns a tuple
+
+\`\`\`csharp
+static (int min, int max) FindRange(int[] nums) => (nums.Min(), nums.Max());
+
+var (lo, hi) = FindRange(new[] { 5, 2, 8 });
+\`\`\`
+
+## Discard with \`_\`
+
+When you only care about some pieces:
+
+\`\`\`csharp
+var (_, age) = GetPerson();   // ignore name
+var (lo, _, _) = GetStats();  // ignore last two
+\`\`\`
+
+## Custom Deconstruct
+
+Any type can be deconstructable by adding a \`Deconstruct\` method:
+
+\`\`\`csharp
+class Point
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public void Deconstruct(out int x, out int y) { x = X; y = Y; }
+}
+
+var p = new Point { X = 3, Y = 4 };
+var (x, y) = p;        // 3, 4
+\`\`\`
+
+## In foreach
+
+\`\`\`csharp
+var pairs = new[] { (1, "a"), (2, "b"), (3, "c") };
+foreach (var (n, s) in pairs)
+    Console.WriteLine($"{n}: {s}");
+\`\`\`
+
+This pattern is everywhere with Dictionary too — \`KeyValuePair<K,V>\` deconstructs into the key + value.`,
+    },
+    {
+      id: 'l-tup-3',
+      title: 'Practice: Min/Max Tuple',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Write a method `(int min, int max) Range(int[] nums)` that returns the smallest and largest values. Then in `Main`, deconstruct the result and print `min=X max=Y`.\n\nFor `{ 5, 2, 8, 1, 9 }`:\n```\nmin=1 max=9\n```',
+        starterCode: `using System;
+using System.Linq;
+
+class Program
+{
+    // Define Range here
+
+    static void Main()
+    {
+        int[] nums = { 5, 2, 8, 1, 9 };
+        // Call Range, deconstruct, print
+
+    }
+}
+`,
+        solution: `using System;
+using System.Linq;
+
+class Program
+{
+    static (int min, int max) Range(int[] nums) => (nums.Min(), nums.Max());
+
+    static void Main()
+    {
+        int[] nums = { 5, 2, 8, 1, 9 };
+        var (lo, hi) = Range(nums);
+        Console.WriteLine($"min={lo} max={hi}");
+    }
+}`,
+        tests: [{ expectedOutput: 'min=1 max=9', description: 'Tuple return + deconstruction' }],
+        hints: [
+          'Method signature: `static (int min, int max) Range(int[] nums)`',
+          'Body can be expression-bodied: `=> (nums.Min(), nums.Max());`',
+          'Deconstruct with `var (lo, hi) = Range(nums);`',
+        ],
+      },
+    },
+  ],
+};
+
+const chIterators: Chapter = {
+  id: 'ch-iterators',
+  title: 'Iterators & yield return',
+  description: 'Lazy, on-demand sequences',
+  icon: '🔁',
+  lessons: [
+    {
+      id: 'l-it-1',
+      title: 'yield return',
+      type: 'theory',
+      xp: 15,
+      theory: `# Iterators
+
+A method whose body uses \`yield return\` becomes an **iterator** — it produces values one at a time, on demand.
+
+\`\`\`csharp
+static IEnumerable<int> Naturals()
+{
+    int n = 1;
+    while (true)
+    {
+        yield return n;
+        n++;
+    }
+}
+
+foreach (var n in Naturals().Take(5))
+    Console.WriteLine(n);
+// 1, 2, 3, 4, 5
+\`\`\`
+
+The method returns \`IEnumerable<T>\`. The body looks normal but it doesn't run all at once — each \`MoveNext()\` from the foreach drives one iteration up to the next \`yield return\`.
+
+## Why this is powerful
+
+- **Infinite sequences** — produce values forever without exhausting memory
+- **Lazy filtering** — process huge files line by line without loading the whole thing
+- **Composable** — chain with LINQ; results computed only when iterated
+
+## yield break
+
+Stop early:
+
+\`\`\`csharp
+static IEnumerable<int> UpTo(int max)
+{
+    for (int i = 1; i <= max; i++)
+        yield return i;
+    yield break;   // explicit; here it's redundant since the loop already ended
+}
+\`\`\`
+
+## State machine under the hood
+
+The compiler rewrites your iterator into a state machine class that captures local variables and tracks where it left off. You don't need to think about it — just remember that the body is **paused** between yields, not re-run.
+
+## Differences from a List<T>
+
+\`\`\`csharp
+List<int> nums = new() { 1, 2, 3 };          // builds eagerly, allocates list
+IEnumerable<int> seq = ProduceLazy();        // builds nothing yet
+\`\`\`
+
+If you'll iterate the sequence multiple times, materialize once with \`.ToList()\`. Otherwise the iterator runs from the top each time.`,
+    },
+    {
+      id: 'l-it-2',
+      title: 'Practice: First N primes',
+      type: 'code',
+      xp: 35,
+      codeExercise: {
+        instructions: 'Implement an iterator method `IEnumerable<int> Primes()` that yields primes 2, 3, 5, 7, 11, ... forever (one at a time).\n\nIn `Main`, take the first 5 and print one per line.\n\nExpected output:\n```\n2\n3\n5\n7\n11\n```\n\nA simple primality check (trial division up to √n) is fine.',
+        starterCode: `using System;
+using System.Collections.Generic;
+using System.Linq;
+
+class Program
+{
+    static IEnumerable<int> Primes()
+    {
+        // yield primes 2, 3, 5, 7, ...
+        yield break;
+    }
+
+    static void Main()
+    {
+        foreach (var p in Primes().Take(5))
+            Console.WriteLine(p);
+    }
+}
+`,
+        solution: `using System;
+using System.Collections.Generic;
+using System.Linq;
+
+class Program
+{
+    static IEnumerable<int> Primes()
+    {
+        for (int n = 2; ; n++)
+        {
+            bool prime = true;
+            for (int d = 2; (long)d * d <= n; d++)
+                if (n % d == 0) { prime = false; break; }
+            if (prime) yield return n;
+        }
+    }
+
+    static void Main()
+    {
+        foreach (var p in Primes().Take(5))
+            Console.WriteLine(p);
+    }
+}`,
+        tests: [{ expectedOutput: '2\n3\n5\n7\n11', description: 'First 5 primes' }],
+        hints: [
+          'Loop n from 2 forever (no upper bound — use `for (int n = 2; ; n++)`)',
+          'For each n, test divisibility by d from 2 up to sqrt(n)',
+          'If no divisor found, `yield return n` — don\'t add to a list',
+          'Take(5) on the caller side stops iteration',
+        ],
+      },
+    },
+    {
+      id: 'l-it-3',
+      title: 'Iterators vs LINQ',
+      type: 'theory',
+      xp: 15,
+      theory: `# Iterators vs LINQ
+
+LINQ's \`Where\`, \`Select\`, \`Take\` etc. are **all iterators**. They compose lazily.
+
+\`\`\`csharp
+IEnumerable<int> nums = Enumerable.Range(1, 1_000_000);
+IEnumerable<int> step = nums.Where(n => n % 7 == 0).Select(n => n * 2).Take(5);
+
+foreach (var x in step) Console.WriteLine(x);
+\`\`\`
+
+Even though the source is a million numbers, only the **first few** are pulled — the pipeline pulls one at a time, stops once Take(5) is satisfied.
+
+## When to write your own iterator
+
+When LINQ doesn't express what you need:
+
+- Stateful sequences (Fibonacci, primes, rolling windows)
+- Reading lines from a stream
+- Walking a tree depth-first / breadth-first
+- Generating combinations / permutations
+
+If you can do it with \`Where\` / \`Select\` / \`SelectMany\`, prefer LINQ — it's more readable and well-tested.
+
+## Side effects warning
+
+Iterators run the body **each time** they're iterated. If your body has a side effect (logging, opening a file), it runs each time someone foreaches the result.
+
+\`\`\`csharp
+static IEnumerable<int> Loud()
+{
+    Console.WriteLine("starting");
+    yield return 1;
+    yield return 2;
+}
+
+var seq = Loud();
+foreach (var n in seq) { /* prints "starting" */ }
+foreach (var n in seq) { /* prints "starting" again */ }
+\`\`\`
+
+Materialize once if you need the side effect to run only once: \`var list = Loud().ToList();\``,
+    },
+    {
+      id: 'l-it-4',
+      title: 'Iterators Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'When does the body of an iterator method run?',
+          options: [
+            'Immediately when called',
+            'Lazily — only as the consumer iterates the result',
+            'Once at compile time',
+            'In a background thread',
+          ],
+          correctIndex: 1,
+          explanation: 'Calling an iterator returns an IEnumerable but doesn\'t execute the body. Each call to MoveNext() drives one step of the body up to the next yield.',
+        },
+        {
+          question: 'What does `yield break` do?',
+          options: [
+            'Pauses the iterator',
+            'Throws an exception',
+            'Ends the sequence — no more values',
+            'Skips one iteration',
+          ],
+          correctIndex: 2,
+          explanation: 'yield break ends iteration. The foreach loop on the consumer side completes normally.',
+        },
+        {
+          question: 'You iterate a custom iterator twice. The body...',
+          options: [
+            'Runs once and is cached',
+            'Runs from the start each time, including any side effects',
+            'Throws InvalidOperationException',
+            'Skips the first iteration',
+          ],
+          correctIndex: 1,
+          explanation: 'Each foreach starts a new state machine. If you want one-time evaluation, materialize with ToList()/ToArray().',
+        },
+        {
+          question: 'Why prefer iterators over building a List<T>?',
+          options: [
+            'Faster to write',
+            'Avoid allocating intermediate collections; supports infinite sequences and early termination',
+            'Required by the runtime',
+            'There\'s no difference',
+          ],
+          correctIndex: 1,
+          explanation: 'Lazy iteration uses constant memory regardless of length, supports infinite sequences, and stops as soon as the consumer is satisfied.',
+        },
+      ],
+    },
+  ],
+};
+
+const chReflection: Chapter = {
+  id: 'ch-reflection',
+  title: 'Reflection & Attributes',
+  description: 'Inspect and decorate types at runtime',
+  icon: '🔍',
+  lessons: [
+    {
+      id: 'l-rf-1',
+      title: 'The Type API',
+      type: 'theory',
+      xp: 15,
+      theory: `# Reflection
+
+**Reflection** is the ability to inspect types, members, and metadata at runtime. It's how serializers, ORMs, DI containers, and test frameworks "know" how to work with arbitrary types.
+
+## Getting a Type
+
+\`\`\`csharp
+Type t1 = typeof(string);                    // compile-time
+Type t2 = "hello".GetType();                 // runtime instance
+Type t3 = Type.GetType("System.DateTime");   // by name
+\`\`\`
+
+## What you can ask about a Type
+
+\`\`\`csharp
+Type t = typeof(DateTime);
+t.Name;            // "DateTime"
+t.FullName;        // "System.DateTime"
+t.IsValueType;     // true
+t.BaseType;        // typeof(ValueType)
+t.GetMethods();    // MethodInfo[] of public methods
+t.GetProperties(); // PropertyInfo[] of public properties
+t.GetMethod("AddDays"); // a specific method
+\`\`\`
+
+## Invoking via reflection
+
+\`\`\`csharp
+Type calcType = typeof(Calculator);
+object calc = Activator.CreateInstance(calcType);   // calls parameterless ctor
+MethodInfo addMethod = calcType.GetMethod("Add");
+object result = addMethod.Invoke(calc, new object[] { 2, 3 });
+Console.WriteLine(result);   // 5
+\`\`\`
+
+## Performance
+
+Reflection is **slow** compared to direct calls — every Invoke does method lookup, argument boxing, and security checks. For hot paths use:
+
+- **Compiled expression trees** (\`Expression.Lambda(...).Compile()\`)
+- **Source generators** (compile-time codegen)
+- **Cached delegates**
+
+For one-off setup or rarely-called code, reflection is fine.`,
+    },
+    {
+      id: 'l-rf-2',
+      title: 'Custom Attributes',
+      type: 'theory',
+      xp: 15,
+      theory: `# Attributes
+
+An **attribute** is metadata you attach to a type, member, parameter, or assembly. Reflection reads it at runtime to drive behavior.
+
+The BCL ships dozens: \`[Obsolete]\`, \`[Serializable]\`, \`[Required]\`, \`[Test]\`, \`[Route]\`, ...
+
+## Built-in examples
+
+\`\`\`csharp
+[Obsolete("Use ConfigureAwait(false) directly")]
+public Task DoWork() => ...;
+
+[Serializable]
+public class State { ... }
+\`\`\`
+
+## Defining your own
+
+\`\`\`csharp
+[AttributeUsage(AttributeTargets.Class)]
+public class TableAttribute : Attribute
+{
+    public string Name { get; }
+    public TableAttribute(string name) => Name = name;
+}
+
+[Table("orders")]
+public class Order { }
+\`\`\`
+
+By convention attribute classes end in \`Attribute\` but you can omit the suffix when applying them: \`[Table("orders")]\` works.
+
+## Reading via reflection
+
+\`\`\`csharp
+TableAttribute t = typeof(Order).GetCustomAttribute<TableAttribute>();
+Console.WriteLine(t?.Name);   // "orders"
+\`\`\`
+
+## When attributes shine
+
+- Mapping classes to a database, JSON shape, or config schema (\`[Column]\`, \`[JsonPropertyName]\`)
+- Marking tests, fixtures (\`[Fact]\`, \`[Theory]\`)
+- Routing in web frameworks (\`[Route("/api/users/{id}")]\`)
+- Validation (\`[Required]\`, \`[Range(0, 100)]\`)
+
+The pattern: attribute = declaration; framework = inspector that reads them.
+
+## AttributeUsage
+
+Limits where the attribute can appear:
+
+\`\`\`csharp
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = false)]
+\`\`\``,
+    },
+    {
+      id: 'l-rf-3',
+      title: 'Practice: Inspect a Type',
+      type: 'code',
+      xp: 35,
+      codeExercise: {
+        instructions: 'A class `Calculator` with three methods is defined for you. Use reflection to print every **public instance method** name (skip property getters with `!m.IsSpecialName`), sorted alphabetically.\n\nExpected output:\n```\nAdd\nMultiply\nSubtract\n```',
+        starterCode: `using System;
+using System.Linq;
+using System.Reflection;
+
+public class Calculator
+{
+    public int Add(int a, int b) => a + b;
+    public int Subtract(int a, int b) => a - b;
+    public int Multiply(int a, int b) => a * b;
+}
+
+class Program
+{
+    static void Main()
+    {
+        Type t = typeof(Calculator);
+        // Get public instance methods, skip getters/setters (m.IsSpecialName),
+        // skip inherited Object methods (DeclaringType filter), sort, print
+
+    }
+}
+`,
+        solution: `using System;
+using System.Linq;
+using System.Reflection;
+
+public class Calculator
+{
+    public int Add(int a, int b) => a + b;
+    public int Subtract(int a, int b) => a - b;
+    public int Multiply(int a, int b) => a * b;
+}
+
+class Program
+{
+    static void Main()
+    {
+        Type t = typeof(Calculator);
+        var names = t.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+            .Where(m => !m.IsSpecialName)
+            .Select(m => m.Name)
+            .OrderBy(n => n)
+            .ToArray();
+        foreach (var n in names) Console.WriteLine(n);
+    }
+}`,
+        tests: [
+          { expectedOutput: 'Add\nMultiply\nSubtract', description: 'Sorted method names' },
+        ],
+        hints: [
+          'BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly excludes inherited Object methods',
+          'Filter out property accessors with `!m.IsSpecialName`',
+          'OrderBy(n => n) for alphabetical order',
+        ],
+      },
+    },
+    {
+      id: 'l-rf-4',
+      title: 'Custom Attribute Demo',
+      type: 'code',
+      xp: 35,
+      codeExercise: {
+        instructions: 'Define a custom attribute `[Description("text")]`. Apply it to a class `Widget`. Then in `Main`, use reflection to read the attribute and print its text.\n\nExpected output:\n```\nA small reusable component\n```',
+        starterCode: `using System;
+using System.Reflection;
+
+[AttributeUsage(AttributeTargets.Class)]
+public class DescriptionAttribute : Attribute
+{
+    // Add a Text property and a constructor
+}
+
+[Description("A small reusable component")]
+class Widget { }
+
+class Program
+{
+    static void Main()
+    {
+        // Read DescriptionAttribute off Widget and print the Text
+
+    }
+}
+`,
+        solution: `using System;
+using System.Reflection;
+
+[AttributeUsage(AttributeTargets.Class)]
+public class DescriptionAttribute : Attribute
+{
+    public string Text { get; }
+    public DescriptionAttribute(string text) { Text = text; }
+}
+
+[Description("A small reusable component")]
+class Widget { }
+
+class Program
+{
+    static void Main()
+    {
+        var attr = (DescriptionAttribute)Attribute.GetCustomAttribute(typeof(Widget), typeof(DescriptionAttribute));
+        Console.WriteLine(attr.Text);
+    }
+}`,
+        tests: [{ expectedOutput: 'A small reusable component', description: 'Custom attribute round-trip' }],
+        hints: [
+          'Add `public string Text { get; }` and a constructor that sets it',
+          'Use `Attribute.GetCustomAttribute(typeof(Widget), typeof(DescriptionAttribute))` and cast',
+        ],
+      },
+    },
+    {
+      id: 'l-rf-5',
+      title: 'Reflection Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'When does reflection happen?',
+          options: ['Compile time', 'Runtime', 'Build time', 'Install time'],
+          correctIndex: 1,
+          explanation: 'Reflection inspects metadata at runtime. It\'s how serializers and DI containers work with types they\'ve never seen before.',
+        },
+        {
+          question: 'What does `[Obsolete("...")]` do?',
+          options: [
+            'Removes the method at runtime',
+            'Causes a compile-time warning when the marked member is used',
+            'Speeds up compilation',
+            'Marks the method as private',
+          ],
+          correctIndex: 1,
+          explanation: 'Obsolete attribute makes the compiler warn (or error, with isError=true) on every usage. Lets you deprecate APIs without breaking callers immediately.',
+        },
+        {
+          question: 'Why is reflection slower than direct calls?',
+          options: [
+            'It runs on a background thread',
+            'It performs metadata lookup, security checks, and boxing per call',
+            'It logs to disk',
+            'It re-compiles every time',
+          ],
+          correctIndex: 1,
+          explanation: 'Each Invoke does dynamic resolution. For hot paths, cache the MethodInfo or compile a delegate once.',
+        },
+        {
+          question: 'Which is the right tool for compile-time type metadata processing in modern .NET?',
+          options: ['Reflection', 'Source generators', 'XML comments', 'Build events'],
+          correctIndex: 1,
+          explanation: 'Source generators run during the compile and emit code. They\'re the modern replacement for reflection in scenarios where runtime cost matters (System.Text.Json, LoggerMessage, etc.).',
+        },
+      ],
+    },
+  ],
+};
+
+const chRecords: Chapter = {
+  id: 'ch-records',
+  title: 'Records & Modern Data Types',
+  description: 'Concise, value-equal data classes',
+  icon: '🪪',
+  lessons: [
+    {
+      id: 'l-rec-1',
+      title: 'Records (C# 9+)',
+      type: 'theory',
+      xp: 20,
+      theory: `# Records
+
+A \`record\` is a class (or struct) whose primary purpose is to hold **data** rather than behavior. C# 9 introduced them; they're now everywhere in modern code.
+
+## The big win
+
+A record gets a bunch of useful behavior **for free**:
+
+- Value-based equality (two records with equal fields are equal)
+- A nice ToString
+- A \`with\`-expression for non-destructive copying
+- Deconstruction
+- Compatible with \`init\` setters
+
+\`\`\`csharp
+public record Person(string Name, int Age);
+
+var a = new Person("Alice", 30);
+var b = new Person("Alice", 30);
+
+Console.WriteLine(a == b);                   // true (value equality)
+Console.WriteLine(a);                         // Person { Name = Alice, Age = 30 }
+
+var c = a with { Age = 31 };                  // copy with one field changed
+\`\`\`
+
+## class equivalent
+
+Without records this would be:
+
+\`\`\`csharp
+public class Person : IEquatable<Person>
+{
+    public string Name { get; init; }
+    public int Age { get; init; }
+    public Person(string name, int age) { Name = name; Age = age; }
+    public bool Equals(Person other) =>
+        other != null && Name == other.Name && Age == other.Age;
+    public override int GetHashCode() => HashCode.Combine(Name, Age);
+    public override string ToString() => $"Person {{ Name = {Name}, Age = {Age} }}";
+    // and you still wouldn't have \`with\`
+}
+\`\`\`
+
+## When to use records vs classes
+
+- **Records**: DTOs, value objects, immutable data, query results, events
+- **Classes**: business objects with behavior, mutable state, identity that's NOT determined by content (e.g. an Order has an Id even when contents change)
+
+## init-only setters
+
+The \`init\` keyword lets a property be set during object initialization but immutable afterward:
+
+\`\`\`csharp
+public class Point
+{
+    public int X { get; init; }
+    public int Y { get; init; }
+}
+
+var p = new Point { X = 1, Y = 2 };   // OK
+// p.X = 3;                            // error — init-only
+\`\`\`
+
+Records use init-only by default.
+
+## Sandbox note
+
+This sandbox uses an older compiler that **doesn't support records or init**. The code above is valid C# 9+ and runs in any modern \`dotnet run\`. We'll move to a newer runtime in a later iteration so you can practice these directly. Until then, this lesson is reading-only.`,
+    },
+    {
+      id: 'l-rec-2',
+      title: 'Records Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Two `record Person(string Name, int Age)` instances with the same Name and Age compare as...',
+          options: ['Different (reference equality)', 'Equal (value equality)', 'Compile error', 'Always false'],
+          correctIndex: 1,
+          explanation: 'Records get value-based Equals/GetHashCode by default. Two records of the same shape with equal members are considered equal.',
+        },
+        {
+          question: 'What does `var b = a with { Age = 31 };` do?',
+          options: [
+            'Mutates a in place',
+            'Creates a copy of a with Age set to 31, leaving a unchanged',
+            'Compiler error',
+            'Moves a into b',
+          ],
+          correctIndex: 1,
+          explanation: 'The with-expression is non-destructive: it returns a new record that\'s a copy except for the specified fields.',
+        },
+        {
+          question: 'When should you prefer a class over a record?',
+          options: [
+            'Always — records are slow',
+            'When the type has identity that doesn\'t come from its data, or significant behavior',
+            'For DTOs',
+            'When you need value equality',
+          ],
+          correctIndex: 1,
+          explanation: 'Records lean toward immutable, value-equal data. Use a class for stateful business objects with behavior, or things with an Id that survives mutation.',
+        },
+        {
+          question: 'What does `init` in `public int X { get; init; }` mean?',
+          options: [
+            'Initialize on first use',
+            'Settable only during object initialization, immutable afterward',
+            'Static',
+            'Required',
+          ],
+          correctIndex: 1,
+          explanation: 'init-only setters allow object-initializer assignment but block later writes. Great for immutable-by-default types.',
+        },
+      ],
+    },
+  ],
+};
+
+const chVariance: Chapter = {
+  id: 'ch-variance',
+  title: 'Covariance & Contravariance',
+  description: 'When IEnumerable<Cat> is an IEnumerable<Animal>',
+  icon: '↔️',
+  lessons: [
+    {
+      id: 'l-var-1',
+      title: 'Covariance with `out`',
+      type: 'theory',
+      xp: 15,
+      theory: `# Variance
+
+**Variance** answers: if \`Cat\` derives from \`Animal\`, is \`IEnumerable<Cat>\` also an \`IEnumerable<Animal>\`?
+
+For most generics, the answer is **no** — \`List<Cat>\` is not a \`List<Animal>\`. But specific interfaces opt in.
+
+## Covariance — \`out T\`
+
+\`\`\`csharp
+class Animal { }
+class Cat : Animal { }
+
+IEnumerable<Cat> cats = new List<Cat>();
+IEnumerable<Animal> animals = cats;   // OK!
+\`\`\`
+
+This works because \`IEnumerable<T>\` is declared as \`IEnumerable<out T>\`. The \`out\` keyword on a generic parameter marks T as **covariant**: the type can be **substituted with a more derived type** in *output positions* (returns, getters).
+
+The intuition: every Cat is an Animal, so a sequence of Cats is safe to iterate as a sequence of Animals.
+
+## Where it shows up
+
+- \`IEnumerable<out T>\`
+- \`IReadOnlyList<out T>\`, \`IReadOnlyCollection<out T>\`
+- \`Func<out TResult>\` (return type is output)
+
+## Why \`List<T>\` is NOT covariant
+
+\`\`\`csharp
+List<Cat> cats = new();
+List<Animal> a = cats;      // ERROR
+a.Add(new Dog());           // -- if it compiled, this would corrupt cats
+\`\`\`
+
+\`List<T>\` lets you both read AND write T, so making it covariant would let you put a Dog into a List<Cat>. Lists are **invariant** for that reason.`,
+    },
+    {
+      id: 'l-var-2',
+      title: 'Contravariance with `in`',
+      type: 'theory',
+      xp: 15,
+      theory: `# Contravariance — \`in T\`
+
+The flip side. \`IComparer<in T>\` is contravariant.
+
+\`\`\`csharp
+IComparer<Animal> animalComparer = ...;
+IComparer<Cat> catComparer = animalComparer;   // OK!
+\`\`\`
+
+The intuition: a comparer that knows how to compare any two Animals can certainly compare two Cats — Cats *are* Animals.
+
+\`in\` means T is used in **input positions** only (parameters, setters). The type can be substituted with a **less derived** type.
+
+## Common contravariant types
+
+- \`IComparer<in T>\`
+- \`Action<in T>\`, \`Action<in T1, in T2, ...>\`
+- \`IEqualityComparer<in T>\`
+- \`Predicate<in T>\`
+
+## Func combines both
+
+\`\`\`csharp
+public delegate TResult Func<in T, out TResult>(T arg);
+\`\`\`
+
+T is contravariant (input), TResult is covariant (output). So \`Func<Animal, Cat>\` is assignable to \`Func<Cat, Animal>\`.
+
+## Cheat sheet
+
+| You want... | Use |
+|---|---|
+| Treat \`X<Cat>\` as \`X<Animal>\` (substitution toward base) | \`out T\` (covariance) |
+| Treat \`X<Animal>\` as \`X<Cat>\` (substitution toward derived) | \`in T\` (contravariance) |
+| Read AND write T | invariant (default) |
+
+## When this comes up in real code
+
+You'll mostly **consume** variance, not declare it: passing a \`List<Cat>\` to a method expecting \`IEnumerable<Animal>\`, or assigning an \`Action<object>\` to an \`Action<string>\`. When designing your own interfaces with a single direction of T, opt in with \`in\`/\`out\` so callers benefit.`,
+    },
+    {
+      id: 'l-var-3',
+      title: 'Variance Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Why is `IEnumerable<Cat>` assignable to `IEnumerable<Animal>`?',
+          options: [
+            'They\'re unrelated, the cast fails',
+            'IEnumerable<out T> is covariant — outputs only, safe to widen the element type',
+            'List<T> handles the conversion',
+            'It\'s only allowed in C# 12+',
+          ],
+          correctIndex: 1,
+          explanation: 'The `out T` declaration on IEnumerable<T> opts into covariance. T is in output positions (yielded values), so widening to a base type is safe.',
+        },
+        {
+          question: 'Why is `List<T>` invariant?',
+          options: [
+            'Lists are slow with variance',
+            'Add(T) takes T as input — covariance would let you Add a wrong derived type',
+            'It\'s not — List<Cat> IS a List<Animal>',
+            'It uses arrays internally',
+          ],
+          correctIndex: 1,
+          explanation: 'List<T> reads AND writes T. Allowing covariance would let you Add a Dog into a List<Cat>, breaking type safety.',
+        },
+        {
+          question: 'Which keyword marks a contravariant generic parameter?',
+          options: ['out', 'in', 'ref', 'where'],
+          correctIndex: 1,
+          explanation: '`in` means the parameter is used only as input. The type can be substituted with a less-derived (more general) type.',
+        },
+        {
+          question: '`Action<Animal> a = ...; Action<Cat> c = a;` is...',
+          options: [
+            'Compile error',
+            'Valid — Action is contravariant in T',
+            'Valid only at runtime',
+            'Valid only when Cat is sealed',
+          ],
+          correctIndex: 1,
+          explanation: 'Action<in T> is contravariant. An action that handles any Animal can certainly handle a Cat.',
+        },
+      ],
+    },
+  ],
+};
+
 // __END_CHAPTERS__
 
 export const csharpCourse: Course = {
@@ -6609,6 +7555,11 @@ export const csharpCourse: Course = {
     chTask,
     chThreading,
     chPatterns,
+    chTuples,
+    chIterators,
+    chReflection,
+    chRecords,
+    chVariance,
     ch12Exceptions,
     chFileIO,
     ch13Milestone,
