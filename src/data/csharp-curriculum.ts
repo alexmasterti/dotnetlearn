@@ -7248,8 +7248,8 @@ class Program
 
 const chRecords: Chapter = {
   id: 'ch-records',
-  title: 'Records & Modern Data Types',
-  description: 'Concise, value-equal data classes',
+  title: 'Modern C# Syntax',
+  description: 'Records, init, top-level statements, primary constructors',
   icon: '🪪',
   lessons: [
     {
@@ -7414,6 +7414,177 @@ class Program
       },
     },
     {
+      id: 'l-rec-4-toplevel',
+      title: 'Top-level statements (C# 9+)',
+      type: 'theory',
+      xp: 15,
+      theory: `# Top-level statements
+
+C# 9 introduced **top-level statements**: a single \`.cs\` file can have statements at the top, no \`class Program\` or \`static void Main\` boilerplate. The compiler synthesizes the \`Main\` for you.
+
+\`\`\`csharp
+using System;
+
+Console.WriteLine("Hello, world!");
+\`\`\`
+
+That's a complete program. The trade-off:
+
+- **Pro**: less ceremony for tiny programs, scripts, samples. Modern .NET templates use this for the \`Program.cs\` file.
+- **Con**: you can have **at most one** file with top-level statements per project (the entry point). For libraries and bigger apps, regular \`class\` declarations still rule.
+
+## What about types and methods?
+
+You can declare types and methods after the top-level statements:
+
+\`\`\`csharp
+using System;
+
+var p = new Person("Alex", 30);
+Console.WriteLine(Greet(p));
+
+string Greet(Person who) => $"Hello, {who.Name}!";
+
+record Person(string Name, int Age);
+\`\`\`
+
+The order is: usings → top-level statements → local functions → type declarations.
+
+## When to use it
+
+- **Yes**: \`Program.cs\` of new console apps, demo files, tiny scripts.
+- **No**: production codebases where you want explicit \`Main\`, multiple entry points, or to be consistent with the rest of your team.
+
+This learning platform's lessons mostly stick with explicit \`class Program { static void Main() }\` because it makes lesson scope explicit. But you'll see top-level statements everywhere in real-world templates.`,
+    },
+    {
+      id: 'l-rec-5-toplevel-code',
+      title: 'Practice: Top-level statements',
+      type: 'code',
+      xp: 25,
+      codeExercise: {
+        instructions: 'Write a complete C# program using **top-level statements** (no `class Program`, no `static void Main`). The program should print three lines:\n```\nHello\nWorld\n42\n```\n\nIf you\'re curious, declare a local function `int Answer()` returning 42 and call it on the third line.',
+        starterCode: `using System;
+
+// No class, no Main — just statements.
+// Console.WriteLine(...) here
+
+`,
+        solution: `using System;
+
+Console.WriteLine("Hello");
+Console.WriteLine("World");
+Console.WriteLine(Answer());
+
+int Answer() => 42;`,
+        tests: [{ expectedOutput: 'Hello\nWorld\n42', description: 'Three lines via top-level statements' }],
+        hints: [
+          'No `class Program` needed — just `Console.WriteLine(...);` directly',
+          'Local functions can be declared after the statements',
+          'Local function: `int Answer() => 42;`',
+        ],
+      },
+    },
+    {
+      id: 'l-rec-6-primary-ctor',
+      title: 'Primary constructors (C# 12)',
+      type: 'theory',
+      xp: 20,
+      theory: `# Primary constructors
+
+C# 12 (Nov 2023) brought **primary constructors** to regular classes and structs. Records have had them since C# 9. The shorthand:
+
+\`\`\`csharp
+class Person(string name, int age)
+{
+    public string Display() => $"{name} ({age})";
+}
+\`\`\`
+
+The parameters \`name\` and \`age\` are in scope for the **entire class body**. They behave like instance fields, but you don't have to write them out:
+
+\`\`\`csharp
+// Without primary ctor:
+class Person
+{
+    private readonly string _name;
+    private readonly int _age;
+    public Person(string name, int age) { _name = name; _age = age; }
+    public string Display() => $"{_name} ({_age})";
+}
+\`\`\`
+
+## Public vs private
+
+By default, primary-ctor parameters are NOT public. To expose them:
+
+\`\`\`csharp
+class Person(string name, int age)
+{
+    public string Name => name;        // expression-bodied property
+    public int Age { get; } = age;     // auto-property with init from param
+}
+\`\`\`
+
+Or just use a record if "public" is what you want.
+
+## When to use it
+
+- **Yes**: small classes that take a few dependencies (DI candidates), value-ish types you don't want to make full records.
+- **Caution**: overuse can hide what's a parameter vs a field. Some teams treat primary ctors only as a transition step toward records.
+
+## Records still have primary ctors
+
+\`\`\`csharp
+public record Point(int X, int Y);   // unchanged: positional record
+\`\`\`
+
+The C# 12 change is that **classes and structs** can use the same syntax now.`,
+    },
+    {
+      id: 'l-rec-7-primary-ctor-code',
+      title: 'Practice: Primary constructor on a class',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Define a `class Greeter(string name)` using a primary constructor, with one method `Hello()` that returns `"Hello, <name>!"`. `Main()` already calls it.\n\nExpected output:\n```\nHello, Alex!\n```',
+        starterCode: `using System;
+
+// Define class Greeter using a primary constructor
+
+class Program
+{
+    static void Main()
+    {
+        var g = new Greeter("Alex");
+        Console.WriteLine(g.Hello());
+    }
+}
+`,
+        solution: `using System;
+
+class Greeter(string name)
+{
+    public string Hello() => $"Hello, {name}!";
+}
+
+class Program
+{
+    static void Main()
+    {
+        var g = new Greeter("Alex");
+        Console.WriteLine(g.Hello());
+    }
+}`,
+        tests: [{ expectedOutput: 'Hello, Alex!', description: 'Primary ctor + method using its parameter' }],
+        hints: [
+          'Class signature is `class Greeter(string name)` — parameters in parens after the class name',
+          '`name` is in scope inside any method body',
+          '`Hello()` can be expression-bodied: `=> $"Hello, {name}!";`',
+        ],
+      },
+    },
+    {
       id: 'l-rec-2',
       title: 'Records Quiz',
       type: 'quiz',
@@ -7457,6 +7628,28 @@ class Program
           ],
           correctIndex: 1,
           explanation: 'init-only setters allow object-initializer assignment but block later writes. Great for immutable-by-default types.',
+        },
+        {
+          question: 'In `class Greeter(string name)`, what is `name`?',
+          options: [
+            'A public property',
+            'A primary-constructor parameter, in scope for the entire class body',
+            'A private field you must declare separately',
+            'A static field',
+          ],
+          correctIndex: 1,
+          explanation: 'Primary-ctor parameters are scoped to the class body. They\'re NOT public properties by default — expose them via `public string Name => name;` or similar.',
+        },
+        {
+          question: 'A program with top-level statements...',
+          options: [
+            'Can have multiple files with top-level statements',
+            'Must still declare `class Program`',
+            'Synthesizes Main for you; only one such file is allowed per project',
+            'Cannot use any types',
+          ],
+          correctIndex: 2,
+          explanation: 'The compiler creates a hidden Main containing your top-level statements. Only one file per project can do this — the entry point.',
         },
       ],
     },
