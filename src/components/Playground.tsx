@@ -283,6 +283,15 @@ export function Playground() {
     ? new Map(Array.from(currentFrame.variables.entries()).map(([n, v]) => [n, v.value]))
     : null;
 
+  // While stepping, show only the output produced up to the current frame
+  // so it appears progressively (matches a real debugger). Outside debug
+  // mode or after the last frame, show the full captured output.
+  const displayedOutput = inDebugger
+    ? currentFrame
+      ? currentFrame.output
+      : ''
+    : output;
+
   const hasError = !!error;
 
   return (
@@ -426,7 +435,7 @@ export function Playground() {
           </div>
 
           {output !== null && !hasError && (
-            <pre className="text-slate-200 whitespace-pre-wrap">{output || '(no output)'}</pre>
+            <pre className="text-slate-200 whitespace-pre-wrap">{displayedOutput || (inDebugger ? '(no output yet)' : '(no output)')}</pre>
           )}
 
           {output && hasError && (

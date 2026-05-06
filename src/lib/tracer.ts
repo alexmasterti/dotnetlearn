@@ -33,6 +33,11 @@ const TYPE_DECL_RE = /^\s*(?:[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:<[^>;{}]+>)?(?:\
 const COMPOUND_RE = /^\s*([A-Za-z_]\w*)\s*(?:\+|-|\*|\/|%|&|\||\^)=\s*[^;]+;\s*$/;
 const ASSIGN_RE = /^\s*([A-Za-z_]\w*)\s*=\s*[^=;][^;]*;\s*$/;
 const INC_DEC_RE = /^\s*(?:\+\+|--)?([A-Za-z_]\w*)(?:\+\+|--)?\s*;\s*$/;
+// Detects `<receiver>.<method>(...)` so we can re-Mark the receiver after a
+// mutating call (e.g. `obj.SetId(5)` should refresh `obj.Id` in the panel).
+// Only triggers if the receiver is in our tracked-locals set, so we don't
+// try to Mark a class name like `Console` or `Math`.
+const RECEIVER_CALL_RE = /\b([A-Za-z_]\w*)\s*\.\s*[A-Za-z_]\w*\s*\(/;
 
 // `if(...){...}` / `while(...){...}` / single-line method bodies all share
 // the shape `... ){ stmt; }` on one source line. Mono compiles them fine but
@@ -65,6 +70,12 @@ export interface TraceFrame {
    */
   depth: number;
   variables: Map<string, TraceVariable>;
+  /**
+   * Cumulative program stdout produced up to (but not including) this frame.
+   * Lets the playground show output progressively while stepping, instead of
+   * dumping everything at the end of the run.
+   */
+  output: string;
 }
 
 export interface ParsedTrace {
@@ -151,6 +162,11 @@ export function instrumentCSharp(source: string): string {
   // the opening brace of a method body, popped when depth goes 2→1.
   const methodStack: string[] = [];
   let pendingMethodName: string | null = null;
+  // Stack of per-method locals we've Mark'd at least once. Used to decide
+  // whether `foo.Bar()` should trigger a follow-up Mark on `foo` (only if
+  // foo is a local we already track — avoids trying to Mark `Console`).
+  // Pushed/popped in lockstep with methodStack.
+  const trackedStack: Set<string>[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
@@ -188,12 +204,14 @@ export function instrumentCSharp(source: string): string {
         depth++;
         if (depth === 2 && pendingMethodName) {
           methodStack.push(pendingMethodName);
+          trackedStack.push(new Set<string>());
           pendingMethodName = null;
           methodOpenedHere = true;
         }
       } else if (ch === '}') {
         if (depth === 2 && methodStack.length > 0) {
           methodStack.pop();
+          trackedStack.pop();
           methodClosedHere = true;
         }
         depth = Math.max(0, depth - 1);
@@ -237,24 +255,36 @@ export function instrumentCSharp(source: string): string {
     out.push(raw);
 
     if (shouldInstrument) {
+      const tracked = trackedStack[trackedStack.length - 1];
+      const markVar = (name: string) => {
+        out.push(traceCall(lineNo, name, currentMethod));
+        if (tracked) tracked.add(name);
+      };
       const decl = code.match(TYPE_DECL_RE);
       if (decl) {
-        out.push(traceCall(lineNo, decl[1], currentMethod));
+        markVar(decl[1]);
       } else {
         const compound = code.match(COMPOUND_RE);
         if (compound) {
-          out.push(traceCall(lineNo, compound[1], currentMethod));
+          markVar(compound[1]);
         } else {
           const assign = code.match(ASSIGN_RE);
           if (assign && !PRIMITIVE_TYPES.has(assign[1])) {
-            out.push(traceCall(lineNo, assign[1], currentMethod));
+            markVar(assign[1]);
           } else {
             const inc = code.match(INC_DEC_RE);
             if (inc && /\+\+|--/.test(code)) {
-              out.push(traceCall(lineNo, inc[1], currentMethod));
+              markVar(inc[1]);
             }
           }
         }
+      }
+      // After any line, look for `<receiver>.method(...)` and re-Mark the
+      // receiver if it's a local we already track. Refreshes object fields
+      // after mutating method calls (e.g. `obj.SetId(5)` => obj.Id updates).
+      const callMatch = code.match(RECEIVER_CALL_RE);
+      if (callMatch && tracked && tracked.has(callMatch[1])) {
+        out.push(traceCall(lineNo, callMatch[1], currentMethod));
       }
     }
 
@@ -437,11 +467,16 @@ export function parseTraceOutput(rawStdout: string): ParsedTrace {
   // filtering without needing a separate scope-end marker.
   interface LiveVar { value: string; line: number; step: number; depth: number; }
   const liveVars = new Map<string, LiveVar>();
+  // Cumulative stdout (excluding our marker lines) up to the current point
+  // in the stream. Each Pos snapshots this so the UI can show output
+  // progressively while stepping.
+  let runningOutput = '';
   let truncated = false;
 
   for (const ln of lines) {
     if (!ln.startsWith(TRACE_MARKER)) {
       clean.push(ln);
+      runningOutput += ln + '\n';
       continue;
     }
     const body = ln.slice(TRACE_MARKER.length);
@@ -455,8 +490,6 @@ export function parseTraceOutput(rawStdout: string): ParsedTrace {
     const name = parts[4];
     const rawValue = parts.slice(5).join('|');
     if (name === POS_MARKER) {
-      // Drop variables that lived at deeper scopes (those callees have
-      // returned by the time control reached this Pos).
       const stale: string[] = [];
       for (const [k, v] of liveVars) if (v.depth > depth) stale.push(k);
       for (const k of stale) liveVars.delete(k);
@@ -464,7 +497,11 @@ export function parseTraceOutput(rawStdout: string): ParsedTrace {
       for (const [k, v] of liveVars) {
         snapshot.set(k, { value: v.value, line: v.line, step: v.step });
       }
-      frames.push({ step, line, method, depth, variables: snapshot });
+      frames.push({
+        step, line, method, depth,
+        variables: snapshot,
+        output: runningOutput.replace(/\n+$/, ''),
+      });
     } else {
       liveVars.set(name, { value: rawValue, line, step, depth });
     }
