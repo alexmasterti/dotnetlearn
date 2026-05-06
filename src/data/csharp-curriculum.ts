@@ -5535,6 +5535,1044 @@ In VS Code / Rider, the test runner has gutter icons next to each \`[Fact]\` so 
   ],
 };
 
+const chAsync: Chapter = {
+  id: 'ch-async',
+  title: 'async / await',
+  description: 'Non-blocking code in modern C#',
+  icon: '⚡',
+  lessons: [
+    {
+      id: 'l-async-1',
+      title: 'What async is for',
+      type: 'theory',
+      xp: 15,
+      theory: `# async / await
+
+\`async\` is C#'s mechanism for **non-blocking I/O**. Most apps spend their lives waiting — for the network, the disk, a database. Async lets the thread move on while the wait happens, so a small thread pool can serve thousands of in-flight requests.
+
+## What async is NOT
+
+- It's not multi-threading. \`await\` doesn't spawn a thread.
+- It's not parallelism. To run two CPU-bound tasks at once, use \`Parallel.For\` or \`Task.Run\`, not \`async\`.
+- It doesn't make code "go faster" on its own — it lets your **thread** do something else while waiting.
+
+## When to reach for it
+
+Use async for **anything that waits**:
+- Network calls (\`HttpClient\`)
+- Database queries (\`EF Core\`, \`Dapper\`)
+- File I/O (\`File.ReadAllTextAsync\`)
+- Timers (\`Task.Delay\`)
+
+Don't bother for in-memory work — making \`int Add(int a, int b)\` async adds overhead with no benefit.
+
+## The mental model
+
+Reading \`await\` as **"pause here until this finishes; meanwhile let the thread do other work"**.
+
+\`\`\`csharp
+public async Task<string> FetchUser(int id)
+{
+    var http = new HttpClient();
+    string json = await http.GetStringAsync($"/users/{id}");   // pause
+    return json;
+}
+\`\`\`
+
+While that GET is in flight, no thread is blocked. When the response arrives, execution resumes from the next line.`,
+    },
+    {
+      id: 'l-async-2',
+      title: 'async syntax',
+      type: 'theory',
+      xp: 15,
+      theory: `# Writing async methods
+
+Three rules:
+1. Mark the method \`async\`
+2. Return \`Task\`, \`Task<T>\`, or \`ValueTask\` (NOT \`async void\` except for event handlers)
+3. Inside, \`await\` other async methods
+
+\`\`\`csharp
+public async Task<int> AddAsync(int a, int b)
+{
+    await Task.Delay(100);   // simulate I/O
+    return a + b;
+}
+\`\`\`
+
+Notice: the method returns \`int\` from your perspective, but the **signature** says \`Task<int>\`. The \`async\` keyword tells the compiler to wrap your return in a Task.
+
+## Calling async from async
+
+\`\`\`csharp
+public async Task RunAsync()
+{
+    int sum = await AddAsync(2, 3);
+    Console.WriteLine(sum);
+}
+\`\`\`
+
+## Calling async from sync
+
+You usually shouldn't, but two ways:
+
+\`\`\`csharp
+// 1. .GetAwaiter().GetResult() — blocks the calling thread
+int sum = AddAsync(2, 3).GetAwaiter().GetResult();
+
+// 2. .Result / .Wait() — same idea, but can deadlock in UI/ASP.NET sync contexts
+int sum = AddAsync(2, 3).Result;
+\`\`\`
+
+In a console \`Main\`, \`async Main\` is supported in modern .NET:
+
+\`\`\`csharp
+public static async Task Main(string[] args)
+{
+    int sum = await AddAsync(2, 3);
+    Console.WriteLine(sum);
+}
+\`\`\`
+
+(The example in this lesson's sandbox uses \`.GetAwaiter().GetResult()\` because our compiler is older — modern .NET supports \`async Main\` directly.)
+
+## Naming
+
+Conventionally, async methods end in \`Async\`: \`GetAsync\`, \`ReadFileAsync\`, \`SendEmailAsync\`. Helpful: when reading code, you can spot the awaitable instantly.`,
+    },
+    {
+      id: 'l-async-3',
+      title: 'Practice: Await Two Tasks',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Two async methods are given: `GetGreetingAsync()` returns `"Hello"` after a tiny delay, `GetNameAsync()` returns `"World"`. Combine them with `Task.WhenAll`, then print `"Hello World"`.\n\nExpected output:\n```\nHello World\n```',
+        starterCode: `using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task<string> GetGreetingAsync() { await Task.Delay(10); return "Hello"; }
+    static async Task<string> GetNameAsync()     { await Task.Delay(10); return "World"; }
+
+    static async Task RunAsync()
+    {
+        // Use Task.WhenAll to wait on both, then print "<greeting> <name>"
+
+    }
+
+    static void Main()
+    {
+        RunAsync().GetAwaiter().GetResult();
+    }
+}
+`,
+        solution: `using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task<string> GetGreetingAsync() { await Task.Delay(10); return "Hello"; }
+    static async Task<string> GetNameAsync()     { await Task.Delay(10); return "World"; }
+
+    static async Task RunAsync()
+    {
+        var t1 = GetGreetingAsync();
+        var t2 = GetNameAsync();
+        await Task.WhenAll(t1, t2);
+        Console.WriteLine(t1.Result + " " + t2.Result);
+    }
+
+    static void Main()
+    {
+        RunAsync().GetAwaiter().GetResult();
+    }
+}`,
+        tests: [{ expectedOutput: 'Hello World', description: 'Two awaited tasks combined' }],
+        hints: [
+          'Start both tasks WITHOUT awaiting yet (var t1 = GetGreetingAsync(); var t2 = GetNameAsync();)',
+          'Then `await Task.WhenAll(t1, t2);` to wait on both in parallel',
+          'After WhenAll, t1.Result and t2.Result are populated',
+        ],
+      },
+    },
+    {
+      id: 'l-async-4',
+      title: 'async Pitfalls',
+      type: 'theory',
+      xp: 15,
+      theory: `# Common async pitfalls
+
+## 1. \`async void\`
+
+Avoid it for everything except event handlers. Exceptions in \`async void\` crash the process — there's no Task to observe them on.
+
+\`\`\`csharp
+// BAD
+public async void DoStuff() { await Task.Delay(1); throw new Exception(); } // crashes app
+
+// GOOD
+public async Task DoStuff() { await Task.Delay(1); throw new Exception(); }
+\`\`\`
+
+## 2. \`.Result\` and \`.Wait()\` in async contexts
+
+Calling \`.Result\` on a Task that needs to resume on the same context (UI thread, classic ASP.NET) deadlocks: the thread is blocked waiting for itself.
+
+In modern ASP.NET Core there's no sync context, so \`.Result\` won't deadlock — but it still blocks a thread. Just \`await\` it.
+
+## 3. Forgetting to await
+
+\`\`\`csharp
+public async Task SaveAsync()
+{
+    // forgot to await — the call returns immediately, save is fire-and-forget
+    DoExpensiveWorkAsync();
+}
+\`\`\`
+
+The compiler warns (CS4014). Fix: \`await DoExpensiveWorkAsync();\`.
+
+## 4. Awaiting in a tight loop
+
+\`\`\`csharp
+foreach (var url in urls)
+    await Fetch(url);   // SEQUENTIAL — one at a time
+\`\`\`
+
+To do them in parallel:
+
+\`\`\`csharp
+var tasks = urls.Select(u => Fetch(u));
+await Task.WhenAll(tasks);
+\`\`\`
+
+## 5. ConfigureAwait(false)
+
+In **library code** (no UI), add \`.ConfigureAwait(false)\` to skip the cost of context capture:
+
+\`\`\`csharp
+var data = await reader.ReadToEndAsync().ConfigureAwait(false);
+\`\`\`
+
+In application code (Web or desktop) the default usually does the right thing. ConfigureAwait(false) is a library-author concern.`,
+    },
+    {
+      id: 'l-async-5',
+      title: 'async Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What does `async` actually do?',
+          options: [
+            'Spawns a new thread for the method',
+            'Lets the method use `await` to pause without blocking the thread',
+            'Runs the method in parallel automatically',
+            'Makes the method faster',
+          ],
+          correctIndex: 1,
+          explanation: 'async lets the method use await. await releases the current thread while the awaited task runs, then resumes once it completes.',
+        },
+        {
+          question: 'Why is `async void` discouraged?',
+          options: [
+            'Slower than async Task',
+            'Exceptions inside crash the process — there\'s no Task to observe them on',
+            'Doesn\'t compile',
+            'It\'s deprecated in C# 11',
+          ],
+          correctIndex: 1,
+          explanation: 'A Task lets the caller observe completion and exceptions. void doesn\'t — uncaught exceptions in async void escape to AppDomain.UnhandledException.',
+        },
+        {
+          question: 'How do you run two async tasks in parallel and wait for both?',
+          options: [
+            'await both in sequence',
+            'Wrap them in Task.Run and await each',
+            'Start both, then `await Task.WhenAll(t1, t2)`',
+            'Use Task.Wait()',
+          ],
+          correctIndex: 2,
+          explanation: 'Start both — they\'re running. WhenAll yields a single task that completes when all input tasks are done.',
+        },
+        {
+          question: 'When should you use `.GetAwaiter().GetResult()`?',
+          options: [
+            'Always, instead of await',
+            'Only when bridging from sync code to async, knowing it blocks the calling thread',
+            'When you want to skip exception handling',
+            'Never — it\'s removed in .NET 9',
+          ],
+          correctIndex: 1,
+          explanation: 'It\'s the sync-over-async bridge. Use sparingly — at the top of a sync entry point. Inside async code, just use await.',
+        },
+      ],
+    },
+  ],
+};
+
+const chTask: Chapter = {
+  id: 'ch-task',
+  title: 'Task, ValueTask & Cancellation',
+  description: 'The async building blocks',
+  icon: '⏳',
+  lessons: [
+    {
+      id: 'l-tk-1',
+      title: 'Task<T> basics',
+      type: 'theory',
+      xp: 15,
+      theory: `# Task<T>
+
+A \`Task\` is a handle to an in-flight piece of work. \`Task<T>\` produces a value of type T when complete.
+
+## Creating tasks
+
+\`\`\`csharp
+Task t1 = Task.Run(() => DoSomething());      // run on the thread pool
+Task t2 = Task.Delay(500);                     // a timer task
+Task<int> t3 = AddAsync(2, 3);                 // an async method's return
+Task<int> t4 = Task.FromResult(42);            // already-completed task
+\`\`\`
+
+## Composing tasks
+
+\`\`\`csharp
+await t1;                                      // wait for completion (no return)
+int r = await t3;                              // wait + extract value
+
+await Task.WhenAll(t1, t2, t3);                // wait for all
+Task<int> first = await Task.WhenAny(t3, t4);  // wait for first
+\`\`\`
+
+## Exceptions
+
+If a task fails, awaiting it **rethrows** the exception:
+
+\`\`\`csharp
+try
+{
+    int r = await DivideAsync(1, 0);
+}
+catch (DivideByZeroException ex)
+{
+    Console.WriteLine(ex.Message);
+}
+\`\`\`
+
+If you don't await, the exception is silently captured in the task and lost (unless you observe \`task.Exception\` later).
+
+## Task vs Task.Run
+
+\`\`\`csharp
+async Task<int> ReadFileAsync()
+{
+    return await File.ReadAllTextAsync("data.txt").Length;   // I/O bound
+}
+
+Task<int> Compute()
+{
+    return Task.Run(() => Fibonacci(40));   // CPU bound
+}
+\`\`\`
+
+- I/O work: just \`await\` the async API — no Task.Run needed.
+- CPU work: wrap in Task.Run to push it onto the thread pool.
+
+\`Task.Run\` for I/O is wasteful — it blocks a thread pool thread instead of releasing it.`,
+    },
+    {
+      id: 'l-tk-2',
+      title: 'ValueTask',
+      type: 'theory',
+      xp: 15,
+      theory: `# ValueTask<T>
+
+\`Task<T>\` is a class — every async method that returns one allocates. For methods that **often complete synchronously** (cache hit, fast path), the allocation is wasted.
+
+\`ValueTask<T>\` is a struct that can hold either a synchronous value or a Task — no allocation in the sync path.
+
+\`\`\`csharp
+private string? _cached;
+
+public async ValueTask<string> GetAsync()
+{
+    if (_cached != null) return _cached;          // sync path — no Task allocation
+    _cached = await FetchAsync();                 // async path — allocates
+    return _cached;
+}
+\`\`\`
+
+## When to use it
+
+- **Hot async path** that often returns synchronously (cache, lazy initializer)
+- **High-throughput** scenarios where allocations matter
+
+## When NOT
+
+- General application code — \`Task<T>\` is simpler and almost as fast
+- When you await the same ValueTask twice (it's only safe to await once) — Task is reusable
+
+Most C# code never needs ValueTask. It's a tool for library authors and hot-path APIs.
+
+## await once
+
+A ValueTask can wrap an \`IValueTaskSource\` that's pooled and reused. Awaiting twice can return stale results. If you really need to await twice, do this:
+
+\`\`\`csharp
+ValueTask<int> v = GetAsync();
+Task<int> t = v.AsTask();   // converts to a normal Task you can await many times
+\`\`\``,
+    },
+    {
+      id: 'l-tk-3',
+      title: 'CancellationToken',
+      type: 'theory',
+      xp: 15,
+      theory: `# CancellationToken
+
+Long-running async work needs a way to **stop early**: user clicked cancel, request timed out, app is shutting down.
+
+The .NET pattern: pass a \`CancellationToken\` and check it / pass it to inner calls.
+
+## Using it
+
+\`\`\`csharp
+public async Task DownloadAsync(string url, CancellationToken ct)
+{
+    using var http = new HttpClient();
+    using var stream = await http.GetStreamAsync(url, ct);   // cancellable
+
+    var buf = new byte[4096];
+    int n;
+    while ((n = await stream.ReadAsync(buf, 0, buf.Length, ct)) > 0)
+    {
+        ct.ThrowIfCancellationRequested();   // explicit checkpoint
+        // process buf[0..n]
+    }
+}
+\`\`\`
+
+## Producing one
+
+\`\`\`csharp
+var cts = new CancellationTokenSource();
+cts.CancelAfter(TimeSpan.FromSeconds(5));   // auto-cancel after 5s
+
+try
+{
+    await DownloadAsync(url, cts.Token);
+}
+catch (OperationCanceledException)
+{
+    Console.WriteLine("timed out");
+}
+\`\`\`
+
+## Patterns
+
+- **CancelAfter** — built-in timeout
+- **Cancel()** — manual: e.g. user clicked Cancel
+- **Linked tokens** — combine multiple sources:
+
+\`\`\`csharp
+using var linked = CancellationTokenSource.CreateLinkedTokenSource(userCt, timeoutCt);
+await DoWork(linked.Token);   // cancels if EITHER source cancels
+\`\`\`
+
+## Etiquette
+
+- Library authors: **always** accept a CancellationToken parameter (often defaulted to \`default\`)
+- App authors: **always** flow it through every async call
+- Never swallow \`OperationCanceledException\` in a generic \`catch (Exception)\` — let it propagate so the caller sees the cancel`,
+    },
+    {
+      id: 'l-tk-4',
+      title: 'Task & Cancellation Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What\'s the difference between Task and ValueTask?',
+          options: [
+            'Task is faster',
+            'ValueTask is a struct that avoids allocation when the operation completes synchronously',
+            'Task is for CPU work, ValueTask is for I/O',
+            'ValueTask is deprecated',
+          ],
+          correctIndex: 1,
+          explanation: 'ValueTask wraps either a sync value or a Task. In hot async code that often hits a fast/cached path, it skips the heap allocation Task<T> requires.',
+        },
+        {
+          question: 'What does `await Task.WhenAll(t1, t2)` do?',
+          options: [
+            'Runs t1 and t2 in serial',
+            'Waits for the first task to complete',
+            'Waits for ALL tasks to complete; faults if any failed',
+            'Cancels both tasks',
+          ],
+          correctIndex: 2,
+          explanation: 'WhenAll waits for every task. If any threw, the aggregate exception is rethrown.',
+        },
+        {
+          question: 'What should a long-running async method accept as a parameter?',
+          options: [
+            'a TimeSpan',
+            'a CancellationToken',
+            'a Thread',
+            'a Stopwatch',
+          ],
+          correctIndex: 1,
+          explanation: 'CancellationToken is the .NET pattern for cooperative cancellation. Pass it to every async call and check it at safe points.',
+        },
+        {
+          question: 'When should you wrap I/O in `Task.Run`?',
+          options: [
+            'Always — it\'s required for async',
+            'Never — Task.Run blocks a thread that the I/O await would have released',
+            'Only on Windows',
+            'Only for HttpClient',
+          ],
+          correctIndex: 1,
+          explanation: 'Task.Run is for CPU work. Wrapping I/O in Task.Run defeats the entire purpose of async by burning a thread pool thread on what would otherwise be free.',
+        },
+      ],
+    },
+  ],
+};
+
+const chThreading: Chapter = {
+  id: 'ch-threading',
+  title: 'Threading & Synchronization',
+  description: 'When you actually need parallelism',
+  icon: '🧵',
+  lessons: [
+    {
+      id: 'l-th-1',
+      title: 'Threads & ThreadPool',
+      type: 'theory',
+      xp: 15,
+      theory: `# Threads, the low-level primitive
+
+A **thread** is the smallest unit of execution the OS can schedule. Modern apps rarely create raw threads — but they're the foundation everything else builds on.
+
+\`\`\`csharp
+using System.Threading;
+
+var t = new Thread(() => Console.WriteLine("from another thread"));
+t.Start();
+t.Join();   // wait for completion
+\`\`\`
+
+\`Thread.Sleep(ms)\` blocks the thread for ms milliseconds — wastes a thread. Prefer \`await Task.Delay(ms)\` in async code.
+
+## ThreadPool
+
+The CLR maintains a pool of pre-warmed threads. Most APIs that "run on the background" use this pool:
+
+\`\`\`csharp
+ThreadPool.QueueUserWorkItem(_ => Console.WriteLine("hi"));
+Task.Run(() => Console.WriteLine("hi"));   // higher-level wrapper
+\`\`\`
+
+The pool grows and shrinks based on load. Don't block its threads with long sleeps or sync I/O — you'll starve other work.
+
+## Parallel.For / Parallel.ForEach
+
+For embarrassingly parallel CPU work:
+
+\`\`\`csharp
+Parallel.For(0, 1000, i => {
+    results[i] = HeavyCompute(i);
+});
+
+Parallel.ForEach(items, item => Process(item));
+\`\`\`
+
+The runtime divides work across pool threads automatically.`,
+    },
+    {
+      id: 'l-th-2',
+      title: 'Race conditions & lock',
+      type: 'theory',
+      xp: 15,
+      theory: `# Race conditions
+
+When two threads touch the same data without coordination, you get **races**. The result depends on timing — sometimes correct, sometimes broken, never reliable.
+
+\`\`\`csharp
+int counter = 0;
+Parallel.For(0, 1_000_000, _ => counter++);
+Console.WriteLine(counter);   // NOT 1,000,000 — usually less
+\`\`\`
+
+\`counter++\` is **read, increment, write** — three steps. Two threads can both read the same value, both increment, both write — losing one update.
+
+## lock — mutual exclusion
+
+\`\`\`csharp
+private readonly object _gate = new object();
+private int _counter;
+
+public void Increment()
+{
+    lock (_gate)
+    {
+        _counter++;
+    }
+}
+\`\`\`
+
+\`lock\` ensures only one thread is inside the block at a time. The simplest correct solution.
+
+## Rules of lock
+
+1. **Lock on a private object**, not on \`this\` (other code might lock on you)
+2. **Hold locks briefly** — don't do I/O or call user code under a lock; risks deadlock
+3. **Always release** — lock auto-releases on exit/exception, but \`Monitor.Enter\` without the using-pattern doesn't
+4. **Pick a consistent order** when locking multiple objects — out-of-order locks deadlock`,
+    },
+    {
+      id: 'l-th-3',
+      title: 'Interlocked & SemaphoreSlim',
+      type: 'theory',
+      xp: 15,
+      theory: `# Lighter-weight primitives
+
+\`lock\` is fine for most cases. For specific patterns, lighter tools exist.
+
+## Interlocked — atomic ops on int/long
+
+\`\`\`csharp
+int counter = 0;
+Parallel.For(0, 1_000_000, _ => Interlocked.Increment(ref counter));
+Console.WriteLine(counter);   // 1,000,000 every time
+\`\`\`
+
+Faster than \`lock\` for simple counters. The CPU instruction is atomic — no thread coordination cost.
+
+Other Interlocked operations:
+- \`Interlocked.Decrement(ref n)\`
+- \`Interlocked.Add(ref n, delta)\`
+- \`Interlocked.Exchange(ref n, newValue)\` — set and return old
+- \`Interlocked.CompareExchange(ref n, newValue, expected)\` — set only if current == expected
+
+## SemaphoreSlim — limit concurrency
+
+\`\`\`csharp
+private static readonly SemaphoreSlim _gate = new SemaphoreSlim(initialCount: 5);
+
+public async Task DoLimitedAsync()
+{
+    await _gate.WaitAsync();
+    try
+    {
+        await DoWorkAsync();
+    }
+    finally
+    {
+        _gate.Release();
+    }
+}
+\`\`\`
+
+This caps concurrency at 5. Useful for rate-limiting outbound HTTP calls, DB connections, etc.
+
+\`SemaphoreSlim\` is **async-friendly** (\`WaitAsync\`); the older \`Semaphore\` is not.
+
+## ReaderWriterLockSlim
+
+When reads vastly outnumber writes:
+
+\`\`\`csharp
+private readonly ReaderWriterLockSlim _rw = new();
+\`\`\`
+
+Many readers can hold the lock simultaneously; writers get exclusive access. More complex than \`lock\` — only reach for it when measurements justify the complexity.
+
+## When to pick what
+
+| Need | Use |
+|---|---|
+| Mutual exclusion, simple | \`lock\` |
+| Atomic int/long counters | \`Interlocked\` |
+| Cap concurrency | \`SemaphoreSlim\` |
+| Many readers, few writers | \`ReaderWriterLockSlim\` |
+| Coordinate threads | \`ManualResetEventSlim\`, \`AutoResetEvent\` |
+| Channel of values | \`System.Threading.Channels\` (advanced) |`,
+    },
+    {
+      id: 'l-th-4',
+      title: 'Practice: Atomic Counter',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Use `Parallel.For` to increment a shared counter 100,000 times **safely**, using `Interlocked.Increment`. Print the final value.\n\nExpected output:\n```\n100000\n```',
+        starterCode: `using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+class Program
+{
+    static int counter = 0;
+
+    static void Main()
+    {
+        Parallel.For(0, 100000, _ =>
+        {
+            // Increment counter atomically
+
+        });
+        Console.WriteLine(counter);
+    }
+}
+`,
+        solution: `using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+class Program
+{
+    static int counter = 0;
+
+    static void Main()
+    {
+        Parallel.For(0, 100000, _ =>
+        {
+            Interlocked.Increment(ref counter);
+        });
+        Console.WriteLine(counter);
+    }
+}`,
+        tests: [{ expectedOutput: '100000', description: 'Atomic counter sums to 100000' }],
+        hints: [
+          'Use Interlocked.Increment(ref counter)',
+          'Without it, plain `counter++` would race and the result would be less than 100000',
+        ],
+      },
+    },
+    {
+      id: 'l-th-5',
+      title: 'Threading Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What problem does `lock` solve?',
+          options: [
+            'Slow code',
+            'Race conditions — only one thread at a time enters the locked block',
+            'Memory leaks',
+            'CPU usage',
+          ],
+          correctIndex: 1,
+          explanation: 'lock provides mutual exclusion. Threads compete to enter; only one wins, others wait.',
+        },
+        {
+          question: 'When should you prefer `Interlocked.Increment` over `lock`?',
+          options: [
+            'Always — it\'s simpler',
+            'For atomic operations on a single int/long counter',
+            'For protecting a complex multi-step transaction',
+            'Never — Interlocked is deprecated',
+          ],
+          correctIndex: 1,
+          explanation: 'Interlocked is hardware-atomic for simple ops on a single value. It\'s faster and lock-free. For multi-step logic touching multiple variables, you still need lock.',
+        },
+        {
+          question: 'Why is `lock (this)` discouraged?',
+          options: [
+            'Slower than locking on a private object',
+            'Outside code may also lock on the same instance, causing unrelated deadlocks',
+            'Doesn\'t compile',
+            'Causes thread starvation',
+          ],
+          correctIndex: 1,
+          explanation: 'If your class instance is publicly visible, anyone could lock on it. Use a private dedicated lock object so only your class controls it.',
+        },
+        {
+          question: 'What does `SemaphoreSlim(initialCount: 5)` do?',
+          options: [
+            'Creates exactly 5 threads',
+            'Limits concurrency: at most 5 threads can be inside the gated section at once',
+            'Caches up to 5 results',
+            'Spawns 5 background tasks',
+          ],
+          correctIndex: 1,
+          explanation: 'Semaphores limit concurrent access. With initialCount=5, the 6th caller blocks until one of the others releases.',
+        },
+      ],
+    },
+  ],
+};
+
+const chPatterns: Chapter = {
+  id: 'ch-patterns',
+  title: 'Pattern Matching',
+  description: 'Modern switching and type checks',
+  icon: '🎯',
+  lessons: [
+    {
+      id: 'l-pat-1',
+      title: 'is patterns',
+      type: 'theory',
+      xp: 15,
+      theory: `# Pattern Matching
+
+C# 7 added **patterns** — concise, declarative ways to test a value's type and shape.
+
+## The classic type-test
+
+Old way:
+
+\`\`\`csharp
+object o = 42;
+if (o is int)
+{
+    int n = (int)o;
+    Console.WriteLine(n);
+}
+\`\`\`
+
+With type pattern (C# 7+):
+
+\`\`\`csharp
+if (o is int n)
+{
+    Console.WriteLine(n);
+}
+\`\`\`
+
+The variable \`n\` is declared and bound in the same expression — no cast needed.
+
+## Constant patterns
+
+\`\`\`csharp
+if (status is null) ...
+if (n is 0) ...
+\`\`\`
+
+## Logical patterns (C# 9+)
+
+\`\`\`csharp
+if (n is > 0 and < 100) ...
+if (color is "red" or "blue") ...
+if (s is not null) ...
+\`\`\`
+
+## Property patterns (C# 8+)
+
+\`\`\`csharp
+if (person is { Name: "Alice", Age: > 18 }) ...
+\`\`\`
+
+## Tuple patterns (C# 8+)
+
+\`\`\`csharp
+if ((status, role) is ("active", "admin")) ...
+\`\`\`
+
+## Where they shine
+
+- Replacing chains of \`is\` + cast
+- Filtering \`Where(x => x is Cat c && c.Age > 5)\`
+- \`switch\` (next lesson)
+
+Some of these (\`and\`, \`or\`, property patterns) require C# 8+ / 9+ / 10+. Our sandbox uses an older compiler, so the runnable examples in the next code lesson stick to the classic \`is X x\` form.`,
+    },
+    {
+      id: 'l-pat-2',
+      title: 'switch statement & expression',
+      type: 'theory',
+      xp: 15,
+      theory: `# switch + patterns
+
+The classic \`switch\` statement got an upgrade — it can branch on patterns, not just constants.
+
+\`\`\`csharp
+abstract class Shape { }
+class Circle    : Shape { public double R; }
+class Rectangle : Shape { public double W, H; }
+
+static double Area(Shape s)
+{
+    switch (s)
+    {
+        case Circle c:
+            return Math.PI * c.R * c.R;
+        case Rectangle r:
+            return r.W * r.H;
+        default:
+            throw new ArgumentException();
+    }
+}
+\`\`\`
+
+The \`case Circle c:\` is a **type pattern** — match the type and bind a variable.
+
+## switch expression (C# 8+)
+
+A more concise form for "value in, value out":
+
+\`\`\`csharp
+static double Area(Shape s) => s switch
+{
+    Circle c        => Math.PI * c.R * c.R,
+    Rectangle r     => r.W * r.H,
+    _               => throw new ArgumentException()
+};
+\`\`\`
+
+The \`_\` is the discard pattern — equivalent to \`default\`.
+
+## with property patterns (C# 8+)
+
+\`\`\`csharp
+static string Tier(Customer c) => c switch
+{
+    { IsVip: true, Age: >= 18 } => "premium",
+    { Age: < 18 }               => "student",
+    _                            => "regular"
+};
+\`\`\`
+
+## with tuple patterns
+
+\`\`\`csharp
+static string Outcome(int hp, bool healed) => (hp, healed) switch
+{
+    (<= 0, _)   => "dead",
+    (_, true)   => "stable",
+    _           => "wounded"
+};
+\`\`\`
+
+## Why use it
+
+- Pattern + binding in one place
+- Compiler checks **exhaustiveness** for sealed hierarchies
+- Compose nested conditions tersely
+- Fewer cast errors
+
+Some switch-expression syntax (relational patterns \`> 0\`, property patterns) is C# 9+ — won't compile in our sandbox. The code lesson uses the older \`switch\` statement form, which works everywhere.`,
+    },
+    {
+      id: 'l-pat-3',
+      title: 'Practice: Shape Area',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Implement `static double Area(Shape s)` using `if (s is X x)` type patterns.\n\n- `Circle` → π × r²\n- `Rectangle` → w × h\n- Anything else → 0\n\n**Note:** in modern C# you would write a `switch` with `case Circle c:` — our older sandbox compiler doesn\'t support that yet, so we use the equivalent if-chain.\n\n`Main()` calls Area on a Circle(2) and a Rectangle(3, 4) and prints both rounded to 2 decimals.\n\nExpected output:\n```\n12.57\n12.00\n```',
+        starterCode: `using System;
+using System.Globalization;
+
+abstract class Shape { }
+class Circle : Shape { public double R; }
+class Rectangle : Shape { public double W, H; }
+
+class Program
+{
+    static double Area(Shape s)
+    {
+        // if (s is Circle c) return ...;
+        // if (s is Rectangle r) return ...;
+        return 0;
+    }
+
+    static void Main()
+    {
+        Console.WriteLine(Area(new Circle { R = 2 }).ToString("F2", CultureInfo.InvariantCulture));
+        Console.WriteLine(Area(new Rectangle { W = 3, H = 4 }).ToString("F2", CultureInfo.InvariantCulture));
+    }
+}
+`,
+        solution: `using System;
+using System.Globalization;
+
+abstract class Shape { }
+class Circle : Shape { public double R; }
+class Rectangle : Shape { public double W, H; }
+
+class Program
+{
+    static double Area(Shape s)
+    {
+        if (s is Circle c)    return Math.PI * c.R * c.R;
+        if (s is Rectangle r) return r.W * r.H;
+        return 0;
+    }
+
+    static void Main()
+    {
+        Console.WriteLine(Area(new Circle { R = 2 }).ToString("F2", CultureInfo.InvariantCulture));
+        Console.WriteLine(Area(new Rectangle { W = 3, H = 4 }).ToString("F2", CultureInfo.InvariantCulture));
+    }
+}`,
+        tests: [{ expectedOutput: '12.57\n12.00', description: 'Shape areas via type pattern' }],
+        hints: [
+          '`if (s is Circle c) return ...;` binds c to the Circle instance — no cast needed',
+          'Chain `is` checks for each type, return early on match',
+          'If neither matched, return 0',
+        ],
+      },
+    },
+    {
+      id: 'l-pat-4',
+      title: 'Pattern Matching Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What does `if (o is int n)` do?',
+          options: [
+            'Throws if o is not int',
+            'Tests AND binds: if o is an int, declares n with that value',
+            'Casts o to int explicitly',
+            'Compares o to int',
+          ],
+          correctIndex: 1,
+          explanation: 'Type pattern. Tests, casts, and binds in one expression. n is in scope only inside the if branch.',
+        },
+        {
+          question: 'In `case Circle c:`, what is `c`?',
+          options: [
+            'A copy of the matched object',
+            'The matched object, statically typed as Circle, no cast needed',
+            'A new Circle instance',
+            'A nullable reference',
+          ],
+          correctIndex: 1,
+          explanation: 'It\'s the same object, but the variable c has type Circle so you can call Circle members directly.',
+        },
+        {
+          question: 'What does `_` mean in a switch expression?',
+          options: [
+            'Null',
+            'Discard pattern — matches anything (like default)',
+            'Compile error',
+            'A wildcard variable',
+          ],
+          correctIndex: 1,
+          explanation: 'The discard pattern matches anything and ignores the value. Equivalent to default in a switch statement.',
+        },
+        {
+          question: 'Why prefer pattern matching over `is X` + cast + member access?',
+          options: [
+            'Faster runtime',
+            'Less code, no cast errors, the bound variable is statically typed',
+            'Required by the runtime',
+            'Stylistic preference only',
+          ],
+          correctIndex: 1,
+          explanation: 'Patterns combine the test, cast, and binding. You can\'t accidentally cast to the wrong type or forget the cast.',
+        },
+      ],
+    },
+  ],
+};
+
 // __END_CHAPTERS__
 
 export const csharpCourse: Course = {
@@ -5567,6 +6605,10 @@ export const csharpCourse: Course = {
     chDisposable,
     ch11Linq,
     chAdvLinq,
+    chAsync,
+    chTask,
+    chThreading,
+    chPatterns,
     ch12Exceptions,
     chFileIO,
     ch13Milestone,
