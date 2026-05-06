@@ -8757,6 +8757,1306 @@ EF Core deserves its own dedicated study. This is the 60-second tour — when yo
   ],
 };
 
+const chClr: Chapter = {
+  id: 'ch-clr',
+  title: 'CLR & GC Internals',
+  description: 'How .NET runs your code',
+  icon: '⚙️',
+  lessons: [
+    {
+      id: 'l-clr-1',
+      title: 'CLR & JIT',
+      type: 'theory',
+      xp: 25,
+      theory: `# The Common Language Runtime (CLR)
+
+C# code is compiled to **IL** (Intermediate Language), not native code. At runtime the **CLR** (Common Language Runtime) loads your assemblies and the **JIT** (Just-In-Time) compiler turns IL into native instructions on demand.
+
+## Compile pipeline
+
+\`\`\`
+.cs → C# compiler (Roslyn) → IL (.dll) → JIT → native code → CPU
+\`\`\`
+
+Compiling to IL keeps your code portable across CPUs. The JIT specializes for the host architecture (x86, x64, ARM64) on first call.
+
+## Tiered JIT
+
+Modern .NET uses **tiered compilation**:
+
+1. **Tier 0** — fast, low-quality codegen on first call. Gets methods running quickly.
+2. **Tier 1** — re-JIT hot methods (called many times) at higher quality with more optimizations.
+
+This is why throughput is lower at app startup but climbs after a warm-up period.
+
+## On-Stack Replacement (OSR)
+
+If a method is in a long-running loop at tier 0, the JIT can swap it to tier 1 **mid-execution**. Real-world programs see this most in startup loops processing big batches.
+
+## Profile-Guided Optimization (PGO)
+
+Newer JIT collects branch / type info during tier 0 and uses it to make better tier 1 codegen. Enabled by default in .NET 8+.
+
+## ReadyToRun (R2R)
+
+Skip the cold-start JIT cost by **pre-JIT-ing** to native at publish time:
+
+\`\`\`bash
+dotnet publish -c Release -p:PublishReadyToRun=true
+\`\`\`
+
+The framework BCL already ships R2R. Your own code can opt in for big-startup-cost apps.
+
+## Native AOT
+
+The most aggressive — compile your entire app to a single native binary at publish time, no JIT at runtime, no IL:
+
+\`\`\`bash
+dotnet publish -c Release -p:PublishAot=true
+\`\`\`
+
+**Pros:** instant startup, smaller memory footprint, smaller binary
+**Cons:** no runtime reflection on dynamic types, no Assembly.Load, careful with libraries that use codegen
+**Use cases:** CLI tools, serverless functions, edge containers`,
+    },
+    {
+      id: 'l-clr-2',
+      title: 'Garbage Collection',
+      type: 'theory',
+      xp: 25,
+      theory: `# The Garbage Collector
+
+The GC manages all memory on the .NET heap. Three big rules to know.
+
+## Generations
+
+The heap is split into three generations based on age:
+
+| Gen | Holds | Collected |
+|---|---|---|
+| **Gen 0** | Brand new objects | Often (cheap) |
+| **Gen 1** | Survived 1 collection | Less often |
+| **Gen 2** | Survived 2 collections | Rarely (expensive — touches the whole heap) |
+
+The "generational hypothesis": most objects die young. Gen 0 collections are the common case and they're fast because they only walk recent allocations.
+
+## Large Object Heap (LOH)
+
+Objects ≥ ~85,000 bytes go straight to the **LOH**, a separate space that's only touched by Gen 2 collections (expensive). The LOH is also not compacted by default — fragmentation accumulates.
+
+If you allocate big arrays often, look at:
+- \`ArrayPool<T>.Shared\` — rent + return so you reuse buffers
+- \`Span<T>\` over chunks of one big buffer
+- \`GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true)\` for one-shot defrag (sparingly)
+
+## Pinned Object Heap (POH, .NET 5+)
+
+A separate heap for pinned objects (pinned for native interop). Keeps pinning out of the regular heap so the GC can compact freely.
+
+\`\`\`csharp
+var arr = GC.AllocateUninitializedArray<byte>(1024, pinned: true);
+\`\`\`
+
+## Workstation vs Server GC
+
+| Mode | When | Trade-off |
+|---|---|---|
+| **Workstation** | Default for client / desktop apps | Single-threaded, low-latency, lower throughput |
+| **Server** | Default for ASP.NET Core | One GC thread per CPU, much higher throughput, larger heap, slightly higher latency on collections |
+
+Toggle with:
+
+\`\`\`xml
+<PropertyGroup>
+  <ServerGarbageCollection>true</ServerGarbageCollection>
+  <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+</PropertyGroup>
+\`\`\`
+
+## Background / concurrent GC
+
+Most Gen 2 collection work happens on a background thread to avoid stop-the-world pauses. You generally want this on.`,
+    },
+    {
+      id: 'l-clr-3',
+      title: 'Allocation-free patterns',
+      type: 'theory',
+      xp: 20,
+      theory: `# Avoiding allocations
+
+The GC is fast, but **the cheapest allocation is the one you don't do**. In hot paths these patterns matter.
+
+## Span<T> and Memory<T>
+
+\`Span<T>\` is a stack-only view over a contiguous region (array, string, native memory). No allocation, no copy.
+
+\`\`\`csharp
+public int CountSpaces(string s)
+{
+    int count = 0;
+    foreach (var c in s.AsSpan())   // no allocation
+        if (c == ' ') count++;
+    return count;
+}
+
+public ReadOnlySpan<char> Trim(string s) => s.AsSpan().Trim();   // no string copy
+\`\`\`
+
+\`Span<T>\` is a \`ref struct\` — can't be stored on the heap, only on the stack or as a parameter. That's the magic that makes it safe and free.
+
+\`Memory<T>\` is the heap-friendly cousin: same idea but storable in fields, awaitable, etc. Slower than Span.
+
+## ArrayPool<T>
+
+Renting from a pool instead of allocating:
+
+\`\`\`csharp
+var buffer = ArrayPool<byte>.Shared.Rent(4096);
+try
+{
+    int read = await stream.ReadAsync(buffer, 0, buffer.Length);
+    // ...
+}
+finally
+{
+    ArrayPool<byte>.Shared.Return(buffer);
+}
+\`\`\`
+
+Critical for code paths that read/write fixed-size buffers in a loop. The runtime pools buffers internally for HTTP / TLS / zlib.
+
+## ObjectPool<T>
+
+\`Microsoft.Extensions.ObjectPool\` for reusable rich objects (StringBuilder, custom DTOs). Same renting pattern.
+
+## stackalloc
+
+For tiny scratch buffers (≤ ~1024 bytes), allocate on the stack:
+
+\`\`\`csharp
+Span<byte> buf = stackalloc byte[256];
+\`\`\`
+
+No heap allocation, no GC pressure, no need to free. Use only for **bounded, small** sizes — overflowing the stack crashes the process.
+
+## ref struct
+
+Mark your own struct \`ref struct\` to forbid heap storage:
+
+\`\`\`csharp
+ref struct Reader
+{
+    private ReadOnlySpan<byte> _data;
+    public Reader(ReadOnlySpan<byte> data) => _data = data;
+}
+\`\`\`
+
+The compiler ensures the struct never escapes to a field, async state machine, or generic — staying purely stack-bound.
+
+## Strings vs StringBuilder
+
+We covered StringBuilder earlier. The advanced version: when concatenating known-size pieces, prefer \`string.Concat(...)\` or \`String.Create\` — they allocate the final string in one shot.
+
+## When to optimize
+
+NEVER guess. Profile first (next lesson). Most code doesn't need any of this — readability wins. The 1% that does need it benefits enormously.`,
+    },
+    {
+      id: 'l-clr-4',
+      title: 'CLR & GC Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Which Gen-N collection is the **most** expensive?',
+          options: ['Gen 0', 'Gen 1', 'Gen 2', 'They\'re identical'],
+          correctIndex: 2,
+          explanation: 'Gen 2 walks the entire long-lived heap including the LOH. Gen 0 only touches recent allocations.',
+        },
+        {
+          question: 'What size threshold sends an object straight to the LOH?',
+          options: ['1 KB', '~10 KB', '~85 KB', '~1 MB'],
+          correctIndex: 2,
+          explanation: '85,000 bytes is the historical threshold. Big arrays (especially long[] / double[]) bypass Gen 0 and live in the LOH.',
+        },
+        {
+          question: 'When should you use `Span<T>`?',
+          options: [
+            'Anywhere you used to use arrays',
+            'On hot paths to avoid allocating substrings or temporary arrays',
+            'Only for binary data',
+            'Never — it\'s for low-level code only',
+          ],
+          correctIndex: 1,
+          explanation: 'Span<T> shines for hot paths that operate over contiguous data without allocation. For ordinary code, plain arrays / strings are fine.',
+        },
+        {
+          question: 'Which JIT mode produces low-quality fast codegen first then re-JITs hot methods at higher quality?',
+          options: ['Native AOT', 'ReadyToRun', 'Tiered Compilation', 'Edit-and-Continue'],
+          correctIndex: 2,
+          explanation: 'Tiered JIT compiles to Tier 0 fast on first call, then re-JITs hot methods to Tier 1 with full optimization once the runtime has data.',
+        },
+      ],
+    },
+  ],
+};
+
+const chPerf: Chapter = {
+  id: 'ch-perf',
+  title: 'Performance & Profiling',
+  description: 'Measure first, optimize second',
+  icon: '⏱️',
+  lessons: [
+    {
+      id: 'l-pf-1',
+      title: 'BenchmarkDotNet',
+      type: 'theory',
+      xp: 20,
+      theory: `# BenchmarkDotNet
+
+The de-facto micro-benchmarking framework for .NET. It handles all the things you'd get wrong by hand: warmup, statistical analysis, GC measurement, multi-runtime comparison.
+
+## A minimal benchmark
+
+\`\`\`csharp
+using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Running;
+
+[MemoryDiagnoser]
+public class StringConcatBench
+{
+    private readonly string[] _parts = Enumerable.Range(0, 100).Select(i => i.ToString()).ToArray();
+
+    [Benchmark(Baseline = true)]
+    public string PlusEquals()
+    {
+        string s = "";
+        foreach (var p in _parts) s += p;
+        return s;
+    }
+
+    [Benchmark]
+    public string StringBuilder()
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var p in _parts) sb.Append(p);
+        return sb.ToString();
+    }
+
+    [Benchmark]
+    public string StringJoin() => string.Join("", _parts);
+}
+
+class Program
+{
+    static void Main() => BenchmarkRunner.Run<StringConcatBench>();
+}
+\`\`\`
+
+\`dotnet run -c Release\` prints a table:
+
+\`\`\`
+| Method        | Mean       | Ratio | Allocated |
+|-------------- |----------- |------ |---------- |
+| PlusEquals    | 2,351 ns   |  1.00 |  6,432 B  |
+| StringBuilder |   312 ns   |  0.13 |    296 B  |
+| StringJoin    |   180 ns   |  0.08 |    192 B  |
+\`\`\`
+
+## Common attributes
+
+- \`[MemoryDiagnoser]\` — adds allocation columns
+- \`[ThreadingDiagnoser]\` — measures lock contention
+- \`[Params(1, 10, 100, 1000)]\` — run the benchmark over multiple values
+- \`[ArgumentsSource(nameof(Inputs))]\` — for complex test data
+- \`[SimpleJob(RuntimeMoniker.Net90)]\` + multiple — compare runtimes
+
+## Important rules
+
+- Benchmarks must run **in Release**, never Debug
+- Methods must return their result so the JIT can't dead-code-eliminate
+- Each benchmark should do work in ~100ns - 1ms; for shorter ops use \`[ShortRunJob]\`
+
+## When NOT to micro-benchmark
+
+End-to-end response time, throughput under load, contention — those need real load tests (k6, JMeter, NBomber). BDN measures **single-threaded micro-ops**.`,
+    },
+    {
+      id: 'l-pf-2',
+      title: 'Profiling production',
+      type: 'theory',
+      xp: 20,
+      theory: `# Profiling
+
+When something's slow in production, you reach for one of these:
+
+## dotnet-counters — live counters
+
+Real-time CPU, memory, GC, ThreadPool, Kestrel metrics:
+
+\`\`\`bash
+dotnet-counters monitor -p <pid>
+\`\`\`
+
+Watching counters often reveals the issue immediately: GC time-in-percent climbing, ThreadPool starvation, etc.
+
+## dotnet-trace — capture runtime events
+
+Records EventPipe traces (compatible with PerfView):
+
+\`\`\`bash
+dotnet-trace collect -p <pid> --providers Microsoft-DotNETCore-SampleProfiler
+\`\`\`
+
+Outputs a \`.nettrace\` file you open in PerfView, Windows Performance Analyzer, or Visual Studio diagnostic tools.
+
+The \`SampleProfiler\` records call stacks at intervals — perfect for "where is the CPU going?" investigations.
+
+## dotnet-dump — capture a memory snapshot
+
+\`\`\`bash
+dotnet-dump collect -p <pid>
+dotnet-dump analyze core_<...>.dmp
+\`\`\`
+
+Inside the analyzer:
+
+\`\`\`
+> dumpheap -stat              # what types are on the heap, by size
+> dumpheap -mt <addr>         # all instances of a type
+> gcroot <addr>               # what's holding this object alive
+> threads                     # all managed threads
+> clrstack                    # current thread's call stack
+\`\`\`
+
+This is the tool of choice for **memory leaks** and **deadlock investigations**.
+
+## PerfView (Windows)
+
+The veteran. Records ETW traces with deeper integration into Windows kernel events. Steeper learning curve; unmatched detail when you need it.
+
+## Application Insights / OpenTelemetry / APM
+
+For distributed apps, you want **per-request tracing** with span breakdowns by service hop. Tools: Datadog, New Relic, Honeycomb, Grafana Tempo, Application Insights. Always-on; correlates request flow across services.
+
+## Visual Studio / Rider profilers
+
+Built-in IDE profilers attach to a running process and offer GUI flame charts:
+
+- VS: Debug → Performance Profiler (CPU, memory, allocations)
+- Rider: dotTrace integration (timeline, sampling, tracing)
+
+Great for local investigation; less useful in production.
+
+## Pick the right tool
+
+| Symptom | Start with |
+|---|---|
+| App is slow / high CPU | dotnet-counters → dotnet-trace |
+| Memory grows over time | dotnet-counters (gc heap size) → dotnet-dump |
+| Slow DB queries | application logs + EF query logging |
+| Slow per-request flow | OpenTelemetry / APM |
+| Cold-start slowness | dotnet-counters at startup → R2R / AOT |`,
+    },
+    {
+      id: 'l-pf-3',
+      title: 'High-perf I/O',
+      type: 'theory',
+      xp: 20,
+      theory: `# High-performance I/O
+
+For middleware that pushes a lot of bytes — proxies, gateways, file servers, MQ clients — the bottleneck is rarely CPU. It's allocation and copies.
+
+## System.IO.Pipelines
+
+\`Pipe\` is a high-performance equivalent of \`Stream\` designed for parsers. Its API gives you a sliding window of bytes you can process without copies.
+
+\`\`\`csharp
+async Task ProcessAsync(PipeReader reader)
+{
+    while (true)
+    {
+        ReadResult result = await reader.ReadAsync();
+        ReadOnlySequence<byte> buffer = result.Buffer;
+
+        while (TryParseLine(ref buffer, out var line))
+            HandleLine(line);
+
+        // Tell the pipe how much we actually consumed
+        reader.AdvanceTo(buffer.Start, buffer.End);
+
+        if (result.IsCompleted) break;
+    }
+    await reader.CompleteAsync();
+}
+\`\`\`
+
+The \`ReadOnlySequence<byte>\` may span multiple internal buffers; you process the slice you've parsed and \`AdvanceTo\` declares what's still needed. The pipe handles backpressure and reuse automatically.
+
+Kestrel, SignalR, and YARP all run on Pipelines under the hood.
+
+## Channels
+
+\`System.Threading.Channels\` is an in-process, async-friendly producer/consumer queue. Ideal for batching work, decoupling stages of a pipeline, and limiting concurrency:
+
+\`\`\`csharp
+var channel = Channel.CreateBounded<Work>(new BoundedChannelOptions(100)
+{
+    SingleReader = true,
+    SingleWriter = false,
+    FullMode = BoundedChannelFullMode.Wait
+});
+
+// producers
+await channel.Writer.WriteAsync(item);
+
+// consumer
+await foreach (var item in channel.Reader.ReadAllAsync(ct))
+    Process(item);
+\`\`\`
+
+Bounded channels apply backpressure: writers wait when full. Unbounded ones don't — easy to OOM, use carefully.
+
+## SocketsHttpHandler tuning
+
+Default \`HttpClient\` is fine for most cases. For aggressive HTTP loads:
+
+\`\`\`csharp
+var handler = new SocketsHttpHandler
+{
+    PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+    PooledConnectionLifetime = TimeSpan.FromMinutes(15),
+    MaxConnectionsPerServer = 100,
+    EnableMultipleHttp2Connections = true
+};
+var client = new HttpClient(handler);
+\`\`\`
+
+Pair with **\`IHttpClientFactory\`** so the handler is reused across calls — creating a new HttpClient per request is the most common .NET perf trap (socket exhaustion).
+
+## HTTP/2 and HTTP/3 (QUIC)
+
+Modern .NET supports both as a server (Kestrel) and client (\`HttpClient\`). Multiplexing eliminates head-of-line blocking; HTTP/3 over QUIC removes TCP-level retransmits. Wire it up; verify with curl \`--http3\` or \`netsh http show iplisten\`.`,
+    },
+    {
+      id: 'l-pf-4',
+      title: 'Performance Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What\'s the cardinal rule of optimization?',
+          options: [
+            'Always use the latest pattern',
+            'Profile first, optimize second',
+            'Premature optimization is good',
+            'Async is always faster',
+          ],
+          correctIndex: 1,
+          explanation: 'Without measurement you optimize the wrong thing. Profile -> identify hot path -> change -> re-profile.',
+        },
+        {
+          question: 'Why use `IHttpClientFactory` instead of `new HttpClient()` per call?',
+          options: [
+            'Faster construction',
+            'Reuses pooled connections — avoids socket exhaustion',
+            'Type safety',
+            'Required for HTTPS',
+          ],
+          correctIndex: 1,
+          explanation: 'Each `new HttpClient()` opens fresh sockets. Under load you exhaust ephemeral ports. The factory pools handlers.',
+        },
+        {
+          question: 'Which tool would you reach for to investigate a memory leak?',
+          options: [
+            'dotnet-counters',
+            'dotnet-trace',
+            'dotnet-dump (heap snapshot, gcroot)',
+            'BenchmarkDotNet',
+          ],
+          correctIndex: 2,
+          explanation: 'A heap snapshot lets you walk all objects, find the type that\'s growing, and use gcroot to find what\'s holding it.',
+        },
+        {
+          question: 'What kind of work is `BenchmarkDotNet` best suited for?',
+          options: [
+            'End-to-end load tests',
+            'Single-threaded micro-benchmarks of small methods',
+            'Real-world request throughput',
+            'Integration tests',
+          ],
+          correctIndex: 1,
+          explanation: 'BDN measures single-threaded micro-ops with statistical rigor. For end-to-end load use k6, JMeter, or NBomber.',
+        },
+      ],
+    },
+  ],
+};
+
+const chObs: Chapter = {
+  id: 'ch-obs',
+  title: 'Observability',
+  description: 'Tracing, metrics, and logs in production',
+  icon: '👁️',
+  lessons: [
+    {
+      id: 'l-obs-1',
+      title: 'OpenTelemetry & .NET',
+      type: 'theory',
+      xp: 20,
+      theory: `# Observability
+
+The "three pillars" your service should emit:
+
+| Pillar | Question it answers | .NET API |
+|---|---|---|
+| **Logs** | What happened in this specific event? | \`ILogger<T>\` |
+| **Metrics** | How is the system trending? (counters, gauges) | \`Meter\`, \`Counter<T>\`, \`Histogram<T>\` |
+| **Traces** | How did this single request flow through services? | \`Activity\`, \`ActivitySource\` |
+
+In modern .NET these all integrate with **OpenTelemetry (OTel)** — a vendor-neutral standard for telemetry. You instrument once, export to any backend (Datadog, Honeycomb, Grafana Tempo, Application Insights, ...).
+
+## Wiring OTel
+
+\`\`\`csharp
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(r => r.AddService("OrderService"))
+    .WithTracing(t => t
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddEntityFrameworkCoreInstrumentation()
+        .AddOtlpExporter())                  // send to collector / backend
+    .WithMetrics(m => m
+        .AddAspNetCoreInstrumentation()
+        .AddRuntimeInstrumentation()         // GC, heap, threadpool
+        .AddOtlpExporter())
+    .WithLogging(l => l.AddOtlpExporter());
+\`\`\`
+
+After this, your normal \`ILogger\`, \`HttpClient\`, EF queries, and ASP.NET Core requests all emit traced telemetry automatically.
+
+## Custom traces
+
+\`\`\`csharp
+private static readonly ActivitySource Source = new("OrderService");
+
+public async Task SubmitAsync(Order o)
+{
+    using var span = Source.StartActivity("Submit Order");
+    span?.SetTag("order.id", o.Id);
+    span?.SetTag("customer.id", o.CustomerId);
+
+    await _db.SaveAsync(o);
+    await _email.SendAsync(o);
+}
+\`\`\`
+
+The using-disposed Activity records start/end time and any tags. If a parent activity exists (e.g. an HTTP request), this becomes a child span.
+
+## Custom metrics
+
+\`\`\`csharp
+private static readonly Meter Meter = new("OrderService");
+private static readonly Counter<int> OrdersSubmitted = Meter.CreateCounter<int>("orders.submitted");
+private static readonly Histogram<double> OrderValue = Meter.CreateHistogram<double>("order.value");
+
+public void Track(Order o)
+{
+    OrdersSubmitted.Add(1, KeyValuePair.Create<string, object?>("currency", o.Currency));
+    OrderValue.Record(o.Total);
+}
+\`\`\`
+
+Counters and histograms get aggregated and shipped to your backend on the configured interval.`,
+    },
+    {
+      id: 'l-obs-2',
+      title: 'Distributed tracing',
+      type: 'theory',
+      xp: 15,
+      theory: `# Distributed tracing
+
+In a microservice world, a single user click might fan out to: API gateway → auth → orders → inventory → payment → email. Distributed tracing links those into one **trace** with each service contributing **spans**.
+
+## How it works
+
+1. The first service generates a trace ID + initial span ID.
+2. When it calls the next service, it injects \`traceparent\` HTTP header (W3C trace context standard).
+3. The next service reads the header, creates child spans under the same trace ID.
+4. Every span ships to a backend; the backend reconstructs the tree.
+
+## In .NET
+
+The runtime handles propagation automatically — \`HttpClient\` injects \`traceparent\`, ASP.NET Core extracts it. You don't write any plumbing.
+
+## What to instrument
+
+For each significant operation:
+
+\`\`\`csharp
+using var span = Source.StartActivity("Charge card");
+span?.SetTag("card.last4", last4);
+span?.SetTag("amount", amount);
+
+try
+{
+    var result = await _stripe.ChargeAsync(amount);
+    span?.SetTag("stripe.id", result.Id);
+}
+catch (Exception ex)
+{
+    span?.SetStatus(ActivityStatusCode.Error, ex.Message);
+    throw;
+}
+\`\`\`
+
+Tags are queryable in your APM ("show all charges where amount > $100 in the last hour"). Names should be the **operation**, not the function.
+
+## Sampling
+
+Recording every request at scale is expensive. Set a **sampling ratio**:
+
+\`\`\`csharp
+.WithTracing(t => t.SetSampler(new TraceIdRatioBasedSampler(0.1)))   // 10%
+\`\`\`
+
+Or use **tail-based sampling** at the collector — keep all errors, sample the successes. Better signal, lower volume.
+
+## Correlation IDs in logs
+
+Logs benefit from the same trace ID. With OTel, \`ILogger\` auto-includes \`TraceId\` and \`SpanId\` in structured output. Now you can pivot from a span timeline to the exact log lines emitted during that span.`,
+    },
+    {
+      id: 'l-obs-3',
+      title: 'Observability Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Which "pillar" answers "how is the system trending"?',
+          options: ['Logs', 'Metrics', 'Traces', 'Dumps'],
+          correctIndex: 1,
+          explanation: 'Metrics are aggregated values over time (counters, histograms, gauges). Logs answer "what happened in this event"; traces answer "how did this request flow".',
+        },
+        {
+          question: 'What does the W3C `traceparent` header do?',
+          options: [
+            'Authenticates the caller',
+            'Carries the trace ID + parent span ID across service boundaries',
+            'Compresses the trace',
+            'Routes the request',
+          ],
+          correctIndex: 1,
+          explanation: 'traceparent links spans across services into one distributed trace. Modern .NET handles propagation transparently.',
+        },
+        {
+          question: 'You record every request at full fidelity. What\'s the typical fix at scale?',
+          options: [
+            'Buy more storage',
+            'Sampling — head-based percentage or tail-based (keep errors, sample successes)',
+            'Drop traces entirely',
+            'Move to Splunk',
+          ],
+          correctIndex: 1,
+          explanation: 'Sampling reduces telemetry volume while preserving signal. Tail-based sampling at the OTel collector is especially powerful — see all errors, sample healthy traffic.',
+        },
+        {
+          question: 'OpenTelemetry replaces which kinds of vendor SDKs?',
+          options: [
+            'Only metrics SDKs',
+            'Logs, metrics, and traces SDKs from APM vendors',
+            'Only Application Insights',
+            'Only on Linux',
+          ],
+          correctIndex: 1,
+          explanation: 'OTel is vendor-neutral. Instrument with OTel APIs once, export to whatever backend (Datadog, Honeycomb, Tempo, AppInsights). No more SDK lock-in.',
+        },
+      ],
+    },
+  ],
+};
+
+const chArch: Chapter = {
+  id: 'ch-arch',
+  title: 'Architecture Patterns',
+  description: 'How big .NET systems are organized',
+  icon: '🏛️',
+  lessons: [
+    {
+      id: 'l-ar-1',
+      title: 'Domain-Driven Design',
+      type: 'theory',
+      xp: 20,
+      theory: `# Domain-Driven Design (DDD)
+
+DDD is a way of designing software around the **language and rules of the business**, not around technical layers.
+
+## Tactical building blocks
+
+| Pattern | Idea |
+|---|---|
+| **Entity** | Has an identity (ID) that survives mutations. \`Order\`, \`Customer\` |
+| **Value Object** | Equality is by value; immutable. \`Money\`, \`DateRange\`, \`Address\` |
+| **Aggregate** | A cluster of entities + VOs treated as one transactional unit, with one **root** entity (e.g. \`Order\` is the root, \`OrderLine\`s are inside) |
+| **Domain Service** | Logic that doesn't fit a single entity (e.g. \`PriceCalculator\`) |
+| **Repository** | Saves/loads aggregates by ID — abstracts persistence |
+| **Domain Event** | "Something happened" — \`OrderPlaced\`, \`PaymentReceived\` |
+
+## Aggregate boundaries
+
+The aggregate root is the only entry point. Outside callers can't reach \`OrderLine\` directly — they go through \`Order\`. This keeps invariants enforceable in one place.
+
+\`\`\`csharp
+public class Order : Entity
+{
+    private readonly List<OrderLine> _lines = new();
+    public IReadOnlyList<OrderLine> Lines => _lines;
+
+    public void AddLine(Product p, int qty)
+    {
+        if (qty <= 0) throw new InvalidOperationException("qty must be positive");
+        if (Status != OrderStatus.Draft) throw new InvalidOperationException();
+        _lines.Add(new OrderLine(p.Id, p.Price, qty));
+        // raise OrderLineAdded domain event
+    }
+}
+\`\`\`
+
+\`AddLine\` enforces "lines can only be added to drafts" and "qty > 0" — invariants of the Order aggregate.
+
+## Strategic side: Bounded Contexts
+
+Big businesses have **multiple meanings** of the same word. "Customer" in Sales is not the same as "Customer" in Support. DDD says: split your system into **bounded contexts**, each with its own model.
+
+- Bounded contexts often map to microservices, but not always — a modular monolith can have bounded contexts with module boundaries.
+- Cross-context communication uses **integration events** (different from domain events) over a bus.
+
+## Where DDD fits
+
+- Complex business domains where the **rules** change a lot — insurance, finance, healthcare, e-commerce checkout
+- Less useful for CRUD-heavy admin panels — there's no rich domain to model
+- Heavy upfront investment; pays off when modeling discipline keeps complexity from exploding`,
+    },
+    {
+      id: 'l-ar-2',
+      title: 'CQRS & Event Sourcing',
+      type: 'theory',
+      xp: 20,
+      theory: `# CQRS and Event Sourcing
+
+## CQRS — Command Query Responsibility Segregation
+
+Reads (queries) and writes (commands) take different paths through your system. Each can be optimized independently.
+
+\`\`\`
+              ┌── Commands ──→ Domain Model ──→ Event Store
+Client ──────┤
+              └── Queries  ──→ Read Models   ←── (projections)
+\`\`\`
+
+- **Commands** mutate state via the domain model with all its rules
+- **Queries** read from denormalized "read models" optimized for the UI
+
+CQRS without ES (event sourcing) is fine: just two paths, often two database layouts. CQRS shines when the read shape is *very* different from the write shape.
+
+## Event Sourcing
+
+Instead of storing the **current state** of an aggregate, store the **sequence of events** that produced it:
+
+\`\`\`
+Order #42:
+  - OrderCreated(2026-01-01, customer=10)
+  - LineAdded(productId=1, qty=2)
+  - LineAdded(productId=5, qty=1)
+  - OrderConfirmed(2026-01-02)
+  - PaymentReceived(amount=99)
+\`\`\`
+
+To get the current state, **replay** the events. To reconstitute past state, replay only events up to a point.
+
+## Wins
+
+- **Audit log** is free — every change is a stored event
+- **Time travel** — see the system as of any past moment
+- **Multiple projections** — derive different read models from the same events
+- **Easy event-driven integration** — events on the wire ARE the events you stored
+
+## Costs
+
+- Schemas evolve; you need event versioning + upcasting strategies
+- Replay can be slow on long streams — snapshots help
+- Steeper learning curve, harder onboarding for the team
+- Debugging is unfamiliar (no "current state" row to inspect)
+
+## .NET tooling
+
+- **EventStoreDB** — purpose-built event store
+- **Marten** — Postgres-backed document + event store
+- **EF Core + custom append-only tables** — DIY, lighter
+- **Aspire** + EventStoreDB module — getting popular
+
+## Recommendation
+
+Don't start with ES. Start with CQRS without ES. Adopt ES only when you've felt audit-log pain or you have a domain (banking, healthcare records, regulatory) where every change must be reconstructible.`,
+    },
+    {
+      id: 'l-ar-3',
+      title: 'Clean / Hexagonal & Modular Monolith',
+      type: 'theory',
+      xp: 20,
+      theory: `# Clean Architecture / Hexagonal
+
+The same idea under different names: **the domain doesn't depend on infrastructure**. Dependencies point **inward**.
+
+## The layers
+
+\`\`\`
+┌──────────────────────────────┐
+│ Infrastructure (DB, HTTP, FS)│ ← outer
+│ ┌──────────────────────────┐ │
+│ │ Application (use cases)   │ │
+│ │ ┌──────────────────────┐ │ │
+│ │ │ Domain (entities, rules)│ │ ← inner
+│ │ └──────────────────────┘ │ │
+│ └──────────────────────────┘ │
+└──────────────────────────────┘
+\`\`\`
+
+- **Domain** — entities, value objects, domain events. No DB. No HTTP. Pure logic.
+- **Application** — use cases / commands / handlers. Orchestrates domain. Defines interfaces it needs (e.g. \`IOrderRepository\`).
+- **Infrastructure** — implementations of those interfaces. EF Core, HttpClient, etc.
+
+The **Dependency Inversion Principle** at the boundary: Application depends on \`IOrderRepository\` (interface). Infrastructure provides \`EFOrderRepository\` (implementation). The arrows point inward.
+
+## Typical project layout
+
+\`\`\`
+MyApp.Domain/        — entities, VOs, events
+MyApp.Application/   — commands, queries, DTOs, handler interfaces
+MyApp.Infrastructure/— DbContext, repos, external API clients
+MyApp.Web/           — ASP.NET Core minimal APIs / controllers
+\`\`\`
+
+The Web project references all three; Domain references nothing.
+
+## Hexagonal (Ports & Adapters)
+
+Same idea, different vocabulary:
+- **Ports** = interfaces the application uses (input ports = use cases; output ports = repository / messaging interfaces)
+- **Adapters** = concrete implementations (HTTP adapter, DB adapter, message queue adapter)
+
+You can swap adapters without touching the inside of the hexagon.
+
+## Modular Monolith
+
+Microservices have real costs (network latency, distributed transactions, deployment complexity). The **modular monolith** keeps domains separate **inside one process**:
+
+\`\`\`
+MyApp/
+  Modules/
+    Catalog/
+      Domain/
+      Application/
+      Infrastructure/
+    Orders/
+      Domain/
+      Application/
+      Infrastructure/
+    Shipping/
+      ...
+  Host/
+\`\`\`
+
+Each module has its own DbContext (usually its own schema), its own use cases, exposes a public API the host wires up. Cross-module calls go through that API.
+
+When pain warrants it, you split a module out into a service. Until then, you have monolith deployment with microservice discipline.
+
+## When to choose what
+
+- **Layered (3-tier)** — simple CRUD apps, small teams
+- **Clean/Hex** — non-trivial domain logic, multiple presentation channels
+- **Modular monolith** — multi-domain product, anticipate scaling out later
+- **Microservices** — separate teams, separate deploy cadence, scale-out boundaries already understood`,
+    },
+    {
+      id: 'l-ar-4',
+      title: 'Architecture Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'In DDD, what is the difference between an Entity and a Value Object?',
+          options: [
+            'Entities are stored in DB, VOs aren\'t',
+            'Entity has a stable identity (id); VO equals by content and is immutable',
+            'VOs can\'t have methods',
+            'Entities are always strings',
+          ],
+          correctIndex: 1,
+          explanation: 'Entity = identity that survives content changes (an Order is the same Order even after its lines change). VO = identity = value (Money(10, "USD") equals another Money(10, "USD")).',
+        },
+        {
+          question: 'What does Clean Architecture say about dependencies?',
+          options: [
+            'They flow outward',
+            'They flow inward — domain depends on nothing, infrastructure depends on domain',
+            'There are no dependencies',
+            'Dependencies are bidirectional',
+          ],
+          correctIndex: 1,
+          explanation: 'Dependency Inversion at the boundary keeps the domain pure and testable. Infrastructure implements interfaces that the domain/application define.',
+        },
+        {
+          question: 'What\'s the main benefit of Event Sourcing?',
+          options: [
+            'Faster reads',
+            'Complete audit log + ability to replay state at any point',
+            'Smaller storage',
+            'Simpler debugging',
+          ],
+          correctIndex: 1,
+          explanation: 'ES keeps the entire history. You can audit, time-travel, derive new projections — all from the immutable event log.',
+        },
+        {
+          question: 'When does a modular monolith beat microservices?',
+          options: [
+            'Always',
+            'When the team is small, deploys are coupled, and you want to defer the cost of distributed systems',
+            'Never — microservices are always better',
+            'Only on Windows',
+          ],
+          correctIndex: 1,
+          explanation: 'Microservices cost: network calls, distributed transactions, more deploys, more infra. Mod-mono postpones that cost while preserving the design discipline. Split when scaling reasons demand it.',
+        },
+      ],
+    },
+  ],
+};
+
+const chDist: Chapter = {
+  id: 'ch-dist',
+  title: 'Distributed Systems with .NET',
+  description: 'Messaging, idempotency, sagas',
+  icon: '🌐',
+  lessons: [
+    {
+      id: 'l-ds-1',
+      title: 'Messaging fundamentals',
+      type: 'theory',
+      xp: 20,
+      theory: `# Messaging in .NET
+
+In a distributed system, services communicate via **messages** as well as HTTP calls. The .NET ecosystem has rich tooling.
+
+## Two basic shapes
+
+| Shape | Pattern | When |
+|---|---|---|
+| **Commands** | Tell another service to do something. One sender, one consumer. | "Place this order" |
+| **Events** | Announce something happened. One sender, many subscribers. | "Order was placed" — billing, fulfillment, analytics all care |
+
+## Brokers
+
+| Broker | Strength |
+|---|---|
+| **Apache Kafka** | High throughput, log-based, replayable. Streaming workloads. |
+| **RabbitMQ** | Mature, flexible routing (exchanges + queues), great for command/RPC patterns |
+| **Azure Service Bus** | Cloud-native AMQP, sessions, dead-lettering, deep Azure integration |
+| **AWS SQS / SNS** | Same idea on AWS |
+| **Google Pub/Sub** | Same idea on GCP |
+
+## .NET libraries on top
+
+| Lib | What it gives |
+|---|---|
+| **MassTransit** | Bus abstraction across brokers; sagas, scheduling, OTel |
+| **NServiceBus** | Commercial alternative to MassTransit, similar feature set |
+| **Wolverine** | Newer, built around handler registration with Marten integration |
+| **Confluent.Kafka** | Bare-metal Kafka client |
+| **RabbitMQ.Client** | Bare-metal RabbitMQ |
+| **Azure.Messaging.ServiceBus** | Native ASB SDK |
+
+## When to add messaging
+
+- Async work that should not block the request (send email, generate report)
+- Decoupling services that change independently
+- Smoothing bursty load — the queue absorbs the spike
+- Event sourcing / event-driven architectures
+
+Don't reach for a broker for synchronous request/response — use HTTP/gRPC for that.`,
+    },
+    {
+      id: 'l-ds-2',
+      title: 'Idempotency',
+      type: 'theory',
+      xp: 20,
+      theory: `# Idempotency
+
+In distributed systems, **the same message can arrive twice**. Networks retry. Brokers redeliver. Workers crash mid-processing and re-pick up the message.
+
+If your handler does \`charge customer $100\` and runs twice, the customer is charged $200. That's a production incident.
+
+## The fix: handlers must be idempotent
+
+Idempotent = "running it once and running it many times produce the same observable result".
+
+## Patterns
+
+### 1. Check before you act
+
+\`\`\`csharp
+public async Task Handle(ChargeCustomer cmd)
+{
+    if (await _db.Charges.AnyAsync(c => c.CommandId == cmd.Id))
+        return;     // already processed
+
+    await _payments.ChargeAsync(cmd.CustomerId, cmd.Amount);
+    _db.Charges.Add(new Charge { CommandId = cmd.Id, ... });
+    await _db.SaveChangesAsync();
+}
+\`\`\`
+
+The \`CommandId\` is unique. If we see it twice, we skip.
+
+### 2. Compare-and-set
+
+For state transitions, only succeed if the source state matches expectations:
+
+\`\`\`csharp
+UPDATE Orders SET Status = 'Paid' WHERE Id = @id AND Status = 'PendingPayment';
+// rowsAffected == 0 means "someone already paid; not us"
+\`\`\`
+
+### 3. Natural idempotency
+
+Some operations are inherently idempotent: \`SET\` (vs \`+=\`), \`DELETE\` (already deleted = success), \`PUT\` of a complete resource state.
+
+## Outbox pattern
+
+Atomicity: writing to your DB **and** publishing to a broker should be transactional.
+
+The trick: write the message to an "outbox" table in the same DB transaction as your business write. A separate process polls the outbox and publishes; on success it marks the row sent.
+
+\`\`\`
+TX: { Insert Order; Insert OutboxMessage("OrderPlaced") }
+   → outbox poller sees new row → publishes to bus → marks row sent
+\`\`\`
+
+Crash anywhere; the next worker picks up unsent rows. The bus may receive the message twice — your handler is idempotent, so that's fine.
+
+MassTransit and Wolverine both ship outbox implementations. EF Core 7+ has interceptors that make rolling your own straightforward.
+
+## Inbox pattern
+
+The mirror image on the consumer side: when a message arrives, write it to an inbox table FIRST in the same transaction as your handler's side effects. On a duplicate (same message ID seen before), skip.`,
+    },
+    {
+      id: 'l-ds-3',
+      title: 'Sagas',
+      type: 'theory',
+      xp: 20,
+      theory: `# Sagas
+
+A **saga** is a long-running distributed transaction that spans multiple services.
+
+You can't use a single ACID transaction across services. Instead you orchestrate: each step is its own local transaction, and on failure you run **compensating actions** to undo prior steps.
+
+## Example: book a trip
+
+\`\`\`
+1. Reserve flight       → if fails: stop
+2. Reserve hotel        → if fails: cancel flight
+3. Charge credit card   → if fails: cancel hotel, cancel flight
+4. Send confirmation
+\`\`\`
+
+Each step talks to a different service. Each step has a **compensation** for unwinding.
+
+## Two flavors
+
+### Choreography
+
+No central coordinator. Each service reacts to events from others.
+
+\`\`\`
+[FlightReserved] → HotelService books → [HotelReserved] → BillingService charges
+\`\`\`
+
+Pros: simple to start; loose coupling.
+Cons: hard to see the whole flow; debugging across services; harder to evolve.
+
+### Orchestration
+
+A central **saga coordinator** drives the flow. Each step sends a command, waits for completion, decides next step.
+
+\`\`\`csharp
+public class TripBookingSaga : Saga<TripState>
+{
+    public async Task Handle(TripRequested cmd)
+    {
+        State.FlightId = await Send(new ReserveFlight(...));
+        State.HotelId  = await Send(new ReserveHotel(...));
+        State.PaymentId = await Send(new ChargeCard(...));
+        await Publish(new TripBooked(...));
+    }
+
+    public async Task Compensate(TripFailed failure)
+    {
+        if (State.PaymentId != null) await Send(new RefundCard(State.PaymentId));
+        if (State.HotelId != null)   await Send(new CancelHotel(State.HotelId));
+        if (State.FlightId != null)  await Send(new CancelFlight(State.FlightId));
+    }
+}
+\`\`\`
+
+Pros: centralized, observable, easy to evolve.
+Cons: the orchestrator becomes a critical service.
+
+## State machines
+
+Both flavors model state explicitly: \`Pending → FlightReserved → HotelReserved → Charged → Booked\` (or → Compensating). MassTransit and NServiceBus both ship saga frameworks where you declare the state machine and they persist its state.
+
+## Don't
+
+- Don't treat sagas as transactions — there's no rollback, only compensation
+- Don't skip idempotency — every step must handle redelivery
+- Don't make the orchestrator stateful in process memory — persist state so it survives restarts`,
+    },
+    {
+      id: 'l-ds-4',
+      title: 'Orleans, Aspire & friends',
+      type: 'theory',
+      xp: 20,
+      theory: `# Distributed runtimes
+
+For some shapes of distributed system, framework-level help is huge.
+
+## Orleans — virtual actors
+
+Orleans models distributed state as **grains**: tiny, single-threaded, addressable units that the framework auto-distributes and auto-persists.
+
+\`\`\`csharp
+public class UserGrain : Grain, IUserGrain
+{
+    private UserState _state = new();
+
+    public Task<int> GetBalance() => Task.FromResult(_state.Balance);
+
+    public Task Deposit(int amount)
+    {
+        _state.Balance += amount;
+        return Task.CompletedTask;
+    }
+}
+
+// caller:
+var user = client.GetGrain<IUserGrain>("alice");
+await user.Deposit(100);
+\`\`\`
+
+You don't care which server runs the grain — Orleans routes calls to wherever it lives. Each grain is single-threaded by identity, so no locking needed within one user. Massively simplifies stateful distributed services (game servers, IoT device twins, financial accounts).
+
+## .NET Aspire
+
+A toolkit for **building and orchestrating cloud-native multi-service apps locally**. You declare your services in code:
+
+\`\`\`csharp
+var builder = DistributedApplication.CreateBuilder(args);
+
+var redis = builder.AddRedis("cache");
+var pg = builder.AddPostgres("db");
+
+builder.AddProject<Projects.OrderService>("orders")
+    .WithReference(pg)
+    .WithReference(redis);
+
+builder.AddProject<Projects.WebApp>("web")
+    .WithReference(orders);
+
+builder.Build().Run();
+\`\`\`
+
+\`dotnet run\` spins up Postgres + Redis + your services + a dashboard at \`localhost:18888\` showing logs / traces / metrics for the whole topology.
+
+For dev loop on multi-service apps, Aspire is a step change. Production deployment can target Kubernetes, Container Apps, etc.
+
+## Dapr
+
+A sidecar runtime that gives every service standard building blocks (state store, pub/sub, secrets, service invocation) over consistent HTTP/gRPC APIs. Polyglot — works with .NET, Go, Python, etc. Useful when you need cross-language services to share patterns.
+
+## What to pick
+
+- **Stateful services with high concurrency** → Orleans (or Akka.NET)
+- **Multi-service .NET app development loop** → Aspire
+- **Polyglot stack** → Dapr or just OTel + your own broker
+- **Single .NET service** → just use ASP.NET Core; you don't need a runtime`,
+    },
+    {
+      id: 'l-ds-5',
+      title: 'Distributed Systems Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'A handler processes a "ChargeCard" command. The broker delivers it twice. What protects the customer?',
+          options: [
+            'The broker guarantees once-only delivery',
+            'Idempotency in the handler — usually checked via a unique CommandId',
+            '.NET runtime',
+            'Nothing — duplicates are inevitable',
+          ],
+          correctIndex: 1,
+          explanation: 'Brokers usually offer "at-least-once" delivery — duplicates happen. Handlers must be idempotent: track CommandId, check before acting.',
+        },
+        {
+          question: 'What problem does the Outbox pattern solve?',
+          options: [
+            'Slow queries',
+            'Atomicity between writing to a DB and publishing to a message broker',
+            'Authentication',
+            'Memory leaks',
+          ],
+          correctIndex: 1,
+          explanation: 'Outbox: write a row in the same DB transaction as your business change; a separate worker reads & publishes. No partial state where the DB is updated but no message was sent.',
+        },
+        {
+          question: 'In a saga, what happens when step 3 of 5 fails?',
+          options: [
+            'The whole thing rolls back atomically',
+            'Compensating actions undo steps 1 and 2',
+            'Step 3 is silently retried forever',
+            'Nothing — failure is ignored',
+          ],
+          correctIndex: 1,
+          explanation: 'Sagas can\'t roll back across services — there\'s no distributed transaction. Each completed step has a compensation that undoes its effect.',
+        },
+        {
+          question: 'What is Orleans best at?',
+          options: [
+            'Stateless web requests',
+            'Stateful, single-threaded-per-identity services at scale (game state, IoT twins, accounts)',
+            'Cross-language messaging',
+            'Local development',
+          ],
+          correctIndex: 1,
+          explanation: 'Orleans grains are virtual actors — addressable, single-threaded, auto-distributed. Great for managing lots of independent state objects without manual sharding.',
+        },
+        {
+          question: 'When should you reach for a message broker instead of HTTP?',
+          options: [
+            'Always',
+            'When you need async work, decoupling, or many subscribers per event',
+            'Only for big data',
+            'Only on Linux',
+          ],
+          correctIndex: 1,
+          explanation: 'Brokers shine for fire-and-forget work, fan-out to many consumers, and absorbing bursty load. For sync request/response, HTTP/gRPC is simpler.',
+        },
+      ],
+    },
+  ],
+};
+
 // __END_CHAPTERS__
 
 export const csharpCourse: Course = {
@@ -8806,5 +10106,10 @@ export const csharpCourse: Course = {
     chLogging,
     chDI,
     chAspNet,
+    chClr,
+    chPerf,
+    chObs,
+    chArch,
+    chDist,
   ],
 };
