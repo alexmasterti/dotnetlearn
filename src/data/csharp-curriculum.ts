@@ -146,6 +146,52 @@ class Program
         ],
       },
     },
+    {
+      id: 'l-ch1-greet',
+      title: 'Challenge: Greet',
+      type: 'challenge',
+      xp: 35,
+      challenge: {
+        description: 'Return the greeting `"Hello, <name>!"` (note the comma, space, and exclamation mark) for any name.\n\nIf the name is empty, return `"Hello, friend!"`.',
+        difficulty: 'easy',
+        examples: [
+          { input: '"Alex"', output: '"Hello, Alex!"' },
+          { input: '"World"', output: '"Hello, World!"' },
+          { input: '""', output: '"Hello, friend!"', explanation: 'Empty name → fallback to friend' },
+        ],
+        functionName: 'Greet',
+        starterCode: `using System;
+
+public class Solution
+{
+    public string Greet(string name)
+    {
+        // your code here
+        return "";
+    }
+}`,
+        solution: `using System;
+
+public class Solution
+{
+    public string Greet(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return "Hello, friend!";
+        return "Hello, " + name + "!";
+    }
+}`,
+        testCases: [
+          { input: '"Alex"', expected: '"Hello, Alex!"', description: 'Standard name' },
+          { input: '"World"', expected: '"Hello, World!"', description: 'Another name' },
+          { input: '""', expected: '"Hello, friend!"', description: 'Empty fallback' },
+          { input: '"Maria"', expected: '"Hello, Maria!"', description: 'Different name' },
+        ],
+        hints: [
+          'Check for empty first: `if (string.IsNullOrEmpty(name)) return "Hello, friend!";`',
+          'Otherwise concatenate or interpolate: `$"Hello, {name}!"`',
+        ],
+      },
+    },
   ],
 };
 
@@ -487,6 +533,58 @@ If \`user\` is null, the second part isn't evaluated - no NullReferenceException
           explanation: '5 > 3 is true. The ! operator negates it, giving false.',
         },
       ],
+    },
+    {
+      id: 'l-ch3-pow2',
+      title: 'Challenge: Power of Two',
+      type: 'challenge',
+      xp: 40,
+      challenge: {
+        description: 'Return `true` if `n` is a positive power of two (1, 2, 4, 8, 16, …), `false` otherwise.\n\n**Bonus**: do it without a loop. There\'s a one-line bitwise trick that turns this into `O(1)`.',
+        difficulty: 'easy',
+        examples: [
+          { input: '1', output: 'True', explanation: '1 = 2^0' },
+          { input: '8', output: 'True', explanation: '8 = 2^3' },
+          { input: '6', output: 'False' },
+          { input: '0', output: 'False', explanation: '0 is not a power of 2' },
+          { input: '-4', output: 'False' },
+        ],
+        functionName: 'IsPowerOfTwo',
+        starterCode: `using System;
+
+public class Solution
+{
+    public bool IsPowerOfTwo(int n)
+    {
+        // your code here
+        return false;
+    }
+}`,
+        solution: `using System;
+
+public class Solution
+{
+    public bool IsPowerOfTwo(int n)
+    {
+        return n > 0 && (n & (n - 1)) == 0;
+    }
+}`,
+        testCases: [
+          { input: '1', expected: 'True', description: '2^0' },
+          { input: '2', expected: 'True', description: '2^1' },
+          { input: '8', expected: 'True', description: '2^3' },
+          { input: '1024', expected: 'True', description: '2^10' },
+          { input: '6', expected: 'False', description: 'Non-power' },
+          { input: '0', expected: 'False', description: 'Zero' },
+          { input: '-4', expected: 'False', description: 'Negative' },
+          { input: '3', expected: 'False', description: 'Not 2-power' },
+        ],
+        hints: [
+          'A power of 2 has exactly one bit set in binary (1=0001, 2=0010, 4=0100, 8=1000)',
+          'Trick: `n & (n - 1)` clears the lowest set bit. If the result is 0, n had only one bit set.',
+          'Don\'t forget: n must be positive. `n > 0 && (n & (n-1)) == 0`',
+        ],
+      },
     },
   ],
 };
@@ -4910,6 +5008,62 @@ list.Add(new Point());
 When in doubt: **classes for behavior, structs for tiny value-like data** (Point, Date, Money).`,
     },
     {
+      id: 'l-vr-code',
+      title: 'Practice: struct vs class semantics',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'A `struct Point` and a `class Box` are defined. Each starts with X=1. The program then assigns each into a new variable, mutates X to 99 on the copy, and prints the original\'s X.\n\nFill in the prints so the output shows that struct copies are independent (Point original stays 1) but class references share state (Box original becomes 99).\n\nExpected output:\n```\nPoint original X: 1\nBox original X: 99\n```',
+        starterCode: `using System;
+
+struct Point { public int X; }
+class Box     { public int X; }
+
+class Program
+{
+    static void Main()
+    {
+        var p1 = new Point { X = 1 };
+        var p2 = p1;
+        p2.X = 99;
+        // Print "Point original X: " followed by p1.X
+
+        var b1 = new Box   { X = 1 };
+        var b2 = b1;
+        b2.X = 99;
+        // Print "Box original X: " followed by b1.X
+    }
+}
+`,
+        solution: `using System;
+
+struct Point { public int X; }
+class Box     { public int X; }
+
+class Program
+{
+    static void Main()
+    {
+        var p1 = new Point { X = 1 };
+        var p2 = p1;
+        p2.X = 99;
+        Console.WriteLine("Point original X: " + p1.X);
+
+        var b1 = new Box   { X = 1 };
+        var b2 = b1;
+        b2.X = 99;
+        Console.WriteLine("Box original X: " + b1.X);
+    }
+}`,
+        tests: [{ expectedOutput: 'Point original X: 1\nBox original X: 99', description: 'struct copies, class shares' }],
+        hints: [
+          'After `p2 = p1`, p1 and p2 are separate Points. Mutating p2 does not change p1.',
+          'After `b2 = b1`, b1 and b2 are two references to the same Box. Mutating b2.X mutates b1.X.',
+          'Just `Console.WriteLine("...: " + p1.X);` and similar for b1',
+        ],
+      },
+    },
+    {
       id: 'l-vr-3',
       title: 'Value vs Reference Quiz',
       type: 'quiz',
@@ -5584,6 +5738,63 @@ dotnet watch test                 # rerun on every save
 In VS Code / Rider, the test runner has gutter icons next to each \`[Fact]\` so you can run/debug a single test.`,
     },
     {
+      id: 'l-test-aaa-code',
+      title: 'Practice: AAA pattern',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'A real test framework like xUnit needs a project — outside our sandbox. But the **AAA pattern** is just three labeled blocks. Write `static bool Test_Add_Works()` that:\n\n- **Arrange**: declare ints a=2 and b=3\n- **Act**: compute sum = a + b\n- **Assert**: return sum == 5\n\n`Main()` calls it and prints `PASS` or `FAIL`.\n\nExpected output:\n```\nPASS\n```',
+        starterCode: `using System;
+
+class Program
+{
+    static bool Test_Add_Works()
+    {
+        // Arrange
+
+        // Act
+
+        // Assert: return whether the result equals the expected
+        return false;
+    }
+
+    static void Main()
+    {
+        Console.WriteLine(Test_Add_Works() ? "PASS" : "FAIL");
+    }
+}
+`,
+        solution: `using System;
+
+class Program
+{
+    static bool Test_Add_Works()
+    {
+        // Arrange
+        int a = 2;
+        int b = 3;
+
+        // Act
+        int sum = a + b;
+
+        // Assert
+        return sum == 5;
+    }
+
+    static void Main()
+    {
+        Console.WriteLine(Test_Add_Works() ? "PASS" : "FAIL");
+    }
+}`,
+        tests: [{ expectedOutput: 'PASS', description: 'AAA-shaped test returns true' }],
+        hints: [
+          'Three blocks, each one statement: declare, compute, compare',
+          'Arrange = inputs; Act = the call under test; Assert = the comparison',
+          'In real xUnit you would write `Assert.Equal(5, sum);` instead of returning a bool',
+        ],
+      },
+    },
+    {
       id: 'l-test-3',
       title: 'Unit Testing Quiz',
       type: 'quiz',
@@ -6136,6 +6347,72 @@ await DoWork(linked.Token);   // cancels if EITHER source cancels
 - Library authors: **always** accept a CancellationToken parameter (often defaulted to \`default\`)
 - App authors: **always** flow it through every async call
 - Never swallow \`OperationCanceledException\` in a generic \`catch (Exception)\` — let it propagate so the caller sees the cancel`,
+    },
+    {
+      id: 'l-tk-cancel-code',
+      title: 'Practice: CancellationToken',
+      type: 'code',
+      xp: 35,
+      codeExercise: {
+        instructions: 'Implement `WaitWithCancelAsync(CancellationToken ct)` that calls `Task.Delay(2000, ct)`. `Main()` already creates a `CancellationTokenSource` that cancels after 50 ms; catch the resulting `OperationCanceledException` and print `"cancelled"`.\n\nExpected output:\n```\ncancelled\n```',
+        starterCode: `using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task WaitWithCancelAsync(CancellationToken ct)
+    {
+        // call Task.Delay with ct so it cancels promptly when ct fires
+    }
+
+    static async Task Main()
+    {
+        using var cts = new CancellationTokenSource(50);
+        try
+        {
+            await WaitWithCancelAsync(cts.Token);
+            Console.WriteLine("finished");
+        }
+        catch (/* what kind of exception? */)
+        {
+            Console.WriteLine("?");
+        }
+    }
+}
+`,
+        solution: `using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task WaitWithCancelAsync(CancellationToken ct)
+    {
+        await Task.Delay(2000, ct);
+    }
+
+    static async Task Main()
+    {
+        using var cts = new CancellationTokenSource(50);
+        try
+        {
+            await WaitWithCancelAsync(cts.Token);
+            Console.WriteLine("finished");
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine("cancelled");
+        }
+    }
+}`,
+        tests: [{ expectedOutput: 'cancelled', description: 'Task.Delay observes the token and throws OCE' }],
+        hints: [
+          '`await Task.Delay(2000, ct)` — Delay accepts the token and throws OperationCanceledException when it fires',
+          'Catch `OperationCanceledException` (NOT plain Exception, which would mask intent)',
+          'CancellationTokenSource(50) auto-cancels after 50 ms',
+        ],
+      },
     },
     {
       id: 'l-tk-4',
