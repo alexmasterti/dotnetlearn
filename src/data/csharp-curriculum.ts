@@ -5702,7 +5702,7 @@ public class Solution
 {
     public string SecondColumn(string line)
     {
-        // split on \',\' and return parts[1] if present
+        // split on the comma and return parts[1] if present
         return "";
     }
 }`,
