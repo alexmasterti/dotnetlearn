@@ -39,7 +39,7 @@ export function useCloudSync(
 
     (async () => {
       const { data } = await supabase
-        .from('user_progress')
+        .from('dotnetlearn_progress')
         .select('progress_data')
         .eq('user_id', user.id)
         .single();
@@ -79,7 +79,7 @@ export function useCloudSync(
 async function saveToCloud(userId: string, progress: UserProgress) {
   if (!supabase) return;
   await supabase
-    .from('user_progress')
+    .from('dotnetlearn_progress')
     .upsert(
       {
         user_id: userId,
