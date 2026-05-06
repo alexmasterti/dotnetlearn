@@ -3513,6 +3513,1087 @@ public class Solution
   ],
 };
 
+const chGenerics: Chapter = {
+  id: 'ch-generics',
+  title: 'Generics',
+  description: 'Code that works for any type',
+  icon: '🧬',
+  lessons: [
+    {
+      id: 'l-gen-1',
+      title: 'Why Generics?',
+      type: 'theory',
+      xp: 15,
+      theory: `# Generics
+
+You've already used \`List<int>\` and \`Dictionary<string, int>\`. The thing in the angle brackets is a **type parameter**. The list itself is generic; you specialize it at the call site.
+
+## The problem generics solve
+
+Imagine you want a "box that holds one thing". Without generics:
+
+\`\`\`csharp
+class IntBox  { public int    Value; }
+class TextBox { public string Value; }
+class CarBox  { public Car    Value; }
+\`\`\`
+
+Three classes, identical structure. Painful.
+
+The pre-generics escape hatch was \`object\`:
+
+\`\`\`csharp
+class Box { public object Value; }     // works for any type
+var b = new Box { Value = 5 };
+int n = (int)b.Value;                  // explicit cast — error-prone
+\`\`\`
+
+You lose **compile-time type safety** and pay for **boxing** (more on that later).
+
+## With generics
+
+\`\`\`csharp
+class Box<T>
+{
+    public T Value;
+}
+
+var ib = new Box<int>    { Value = 5 };       // T is int
+var sb = new Box<string> { Value = "hi" };    // T is string
+
+int n = ib.Value;     // no cast needed
+// int x = sb.Value;  // compile error: string is not int
+\`\`\`
+
+The compiler enforces the type. No casts. No boxing.
+
+## Where T appears
+
+\`T\` is just a name — by convention single-letter PascalCase. You can use it for fields, method params, return types, anywhere a type is expected:
+
+\`\`\`csharp
+class Stack<T>
+{
+    private List<T> _items = new();
+    public void Push(T item)   => _items.Add(item);
+    public T Pop()             { var x = _items[^1]; _items.RemoveAt(_items.Count - 1); return x; }
+    public int Count           => _items.Count;
+}
+\`\`\``,
+    },
+    {
+      id: 'l-gen-2',
+      title: 'Generic Methods & Constraints',
+      type: 'theory',
+      xp: 15,
+      theory: `# Generic Methods
+
+A method (not a class) can be generic on its own:
+
+\`\`\`csharp
+static T First<T>(T[] items)
+{
+    return items[0];
+}
+
+int  i = First<int>(new[] { 1, 2, 3 });    // explicit
+int  j = First(new[] { 1, 2, 3 });         // inferred (no <int> needed)
+string s = First(new[] { "a", "b" });
+\`\`\`
+
+The compiler **infers** \`T\` from the arguments — usually you skip the angle brackets.
+
+## Constraints — \`where T : ...\`
+
+Sometimes \`T\` needs more capability than "any type". A constraint adds a contract:
+
+\`\`\`csharp
+static T Max<T>(T a, T b) where T : IComparable<T>
+{
+    return a.CompareTo(b) > 0 ? a : b;
+}
+\`\`\`
+
+Now \`T\` is guaranteed to have \`CompareTo\`. Common constraints:
+
+| Constraint | Means |
+|---|---|
+| \`where T : class\` | T must be a reference type |
+| \`where T : struct\` | T must be a value type |
+| \`where T : new()\` | T must have a parameterless constructor |
+| \`where T : SomeBase\` | T must be SomeBase or derive from it |
+| \`where T : IComparable<T>\` | T must implement an interface |
+| \`where T : notnull\` | T can't be a nullable type |
+
+You can stack them:
+
+\`\`\`csharp
+static T Build<T>() where T : class, new() => new T();
+\`\`\`
+
+## Multiple type parameters
+
+\`\`\`csharp
+static TOut Convert<TIn, TOut>(TIn input, Func<TIn, TOut> map) => map(input);
+
+int len = Convert("hello", s => s.Length);  // TIn=string, TOut=int
+\`\`\``,
+    },
+    {
+      id: 'l-gen-3',
+      title: 'Build a Pair<T>',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Define a generic class `Pair<T>` with two `T` fields named `First` and `Second`, plus a `Swap()` method that swaps them.\n\n`Main()` already creates a `Pair<int>(1, 2)`, prints it, swaps, then prints again.\n\nExpected output:\n```\n1 2\n2 1\n```',
+        starterCode: `using System;
+
+class Program
+{
+    static void Main()
+    {
+        var p = new Pair<int>(1, 2);
+        Console.WriteLine(p.First + " " + p.Second);
+        p.Swap();
+        Console.WriteLine(p.First + " " + p.Second);
+    }
+}
+
+// Define Pair<T> below — needs:
+//   public T First, Second
+//   public Pair(T first, T second)
+//   public void Swap()
+`,
+        solution: `using System;
+
+class Program
+{
+    static void Main()
+    {
+        var p = new Pair<int>(1, 2);
+        Console.WriteLine(p.First + " " + p.Second);
+        p.Swap();
+        Console.WriteLine(p.First + " " + p.Second);
+    }
+}
+
+class Pair<T>
+{
+    public T First;
+    public T Second;
+    public Pair(T first, T second)
+    {
+        First = first;
+        Second = second;
+    }
+    public void Swap()
+    {
+        T tmp = First;
+        First = Second;
+        Second = tmp;
+    }
+}`,
+        tests: [{ expectedOutput: '1 2\n2 1', description: 'Pair created and swapped' }],
+        hints: [
+          'Place T in the angle brackets after the class name: class Pair<T>',
+          'Use T as the type for fields and constructor parameters',
+          'In Swap, store First in a temp T variable',
+        ],
+      },
+    },
+    {
+      id: 'l-gen-4',
+      title: 'Generics Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Why prefer `List<int>` over `ArrayList`?',
+          options: [
+            'List<int> is faster to construct',
+            'List<int> is type-safe at compile time and avoids boxing for value types',
+            'ArrayList does not exist in .NET',
+            'List<int> uses less memory always',
+          ],
+          correctIndex: 1,
+          explanation: 'Generics give you compile-time type checks AND avoid the boxing overhead that ArrayList\'s `object` storage forces on value types.',
+        },
+        {
+          question: 'What does the constraint `where T : new()` mean?',
+          options: [
+            'T must be a value type',
+            'T must have a public parameterless constructor',
+            'T must be brand new (.NET 5+ types)',
+            'T must implement INotifyPropertyChanged',
+          ],
+          correctIndex: 1,
+          explanation: '`new()` lets you write `new T()` inside the generic body. The compiler enforces that T has a parameterless ctor.',
+        },
+        {
+          question: 'In `static T First<T>(T[] items)`, what makes the compiler infer T?',
+          options: [
+            'The variable name on the left',
+            'The runtime type of the first item',
+            'The argument types passed at the call site',
+            'You always have to specify it explicitly',
+          ],
+          correctIndex: 2,
+          explanation: 'Type inference looks at the arguments. `First(new[]{1,2,3})` infers T = int.',
+        },
+        {
+          question: 'Which constraint should you add to call `.CompareTo` on T?',
+          options: [
+            'where T : class',
+            'where T : new()',
+            'where T : IComparable<T>',
+            'where T : object',
+          ],
+          correctIndex: 2,
+          explanation: '`IComparable<T>` is the interface that provides CompareTo. Without the constraint the compiler doesn\'t know T has the method.',
+        },
+      ],
+    },
+  ],
+};
+
+const chCollections: Chapter = {
+  id: 'ch-collections',
+  title: 'Collections Tour',
+  description: 'Dictionary, HashSet, Queue, Stack',
+  icon: '🗂️',
+  lessons: [
+    {
+      id: 'l-col-1',
+      title: 'Dictionary<TKey, TValue>',
+      type: 'theory',
+      xp: 15,
+      theory: `# Dictionary<TKey, TValue>
+
+A **hash map** — fast lookups by key. O(1) average for add, get, and contains.
+
+\`\`\`csharp
+using System.Collections.Generic;
+
+var ages = new Dictionary<string, int>();
+ages["Alice"] = 30;
+ages["Bob"]   = 25;
+
+Console.WriteLine(ages["Alice"]);    // 30
+Console.WriteLine(ages.Count);       // 2
+
+// Existence check
+if (ages.ContainsKey("Carol"))
+    Console.WriteLine(ages["Carol"]);
+
+// Safe lookup — TryGetValue is the idiomatic way
+if (ages.TryGetValue("Bob", out int bobAge))
+    Console.WriteLine(bobAge);
+
+// Iterate
+foreach (var kv in ages)
+    Console.WriteLine($"{kv.Key} = {kv.Value}");
+
+// Remove
+ages.Remove("Alice");
+\`\`\`
+
+## Initializer syntax
+
+\`\`\`csharp
+var caps = new Dictionary<string, string>
+{
+    ["USA"] = "Washington, DC",
+    ["UK"]  = "London",
+    ["JP"]  = "Tokyo"
+};
+\`\`\`
+
+## Indexer pitfalls
+
+\`dict[key]\` throws \`KeyNotFoundException\` if the key is missing for a *read*, but **silently inserts** on a *write*. Use \`TryGetValue\` for reads when you can't be sure.
+
+## When NOT to use
+
+- When you need to walk in **insertion order** → use \`List<KeyValuePair<...>>\` or \`SortedDictionary\`/\`OrderedDictionary\`
+- When you only need **set membership** (no value) → use \`HashSet<T>\`
+- For **thread safety** → \`ConcurrentDictionary<TKey, TValue>\``,
+    },
+    {
+      id: 'l-col-2',
+      title: 'Practice: Word Counts',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Given the array `string[] words = { "apple", "pear", "apple", "banana", "pear", "apple" };` use a `Dictionary<string, int>` to count occurrences, then print:\n```\napple:3\nbanana:1\npear:2\n```\n\nThe order is **alphabetical by key**.',
+        starterCode: `using System;
+using System.Collections.Generic;
+using System.Linq;
+
+class Program
+{
+    static void Main()
+    {
+        string[] words = { "apple", "pear", "apple", "banana", "pear", "apple" };
+        var counts = new Dictionary<string, int>();
+        // populate counts
+
+        // print in alphabetical order: $"{word}:{count}"
+
+    }
+}
+`,
+        solution: `using System;
+using System.Collections.Generic;
+using System.Linq;
+
+class Program
+{
+    static void Main()
+    {
+        string[] words = { "apple", "pear", "apple", "banana", "pear", "apple" };
+        var counts = new Dictionary<string, int>();
+        foreach (var w in words)
+        {
+            if (counts.ContainsKey(w)) counts[w]++;
+            else counts[w] = 1;
+        }
+        foreach (var kv in counts.OrderBy(k => k.Key))
+            Console.WriteLine($"{kv.Key}:{kv.Value}");
+    }
+}`,
+        tests: [{ expectedOutput: 'apple:3\nbanana:1\npear:2', description: 'Counts sorted alphabetically' }],
+        hints: [
+          'Pattern: `if (dict.ContainsKey(key)) dict[key]++; else dict[key] = 1;`',
+          'Use `counts.OrderBy(kv => kv.Key)` (LINQ) to walk keys alphabetically',
+        ],
+      },
+    },
+    {
+      id: 'l-col-3',
+      title: 'HashSet, Queue & Stack',
+      type: 'theory',
+      xp: 15,
+      theory: `# Three more collections
+
+## HashSet<T> — unique values
+
+Like a Dictionary's keys without values: O(1) add / contains / remove. Drops duplicates automatically.
+
+\`\`\`csharp
+var seen = new HashSet<int>();
+seen.Add(1);
+seen.Add(2);
+seen.Add(1);          // duplicate — Add returns false, set is still {1,2}
+
+bool has = seen.Contains(2);     // true
+
+// Set algebra
+var a = new HashSet<int> { 1, 2, 3 };
+var b = new HashSet<int> { 2, 3, 4 };
+a.IntersectWith(b);              // a is now {2, 3}
+a.UnionWith(b);                  // a is now {2, 3, 4}
+\`\`\`
+
+## Queue<T> — FIFO
+
+First-in, first-out. Useful for breadth-first traversal, work queues, buffering.
+
+\`\`\`csharp
+var q = new Queue<string>();
+q.Enqueue("first");
+q.Enqueue("second");
+q.Enqueue("third");
+
+string s = q.Dequeue();   // "first"
+string p = q.Peek();      // "second" — doesn't remove
+\`\`\`
+
+## Stack<T> — LIFO
+
+Last-in, first-out. Depth-first traversal, undo histories, expression evaluation.
+
+\`\`\`csharp
+var st = new Stack<int>();
+st.Push(1);
+st.Push(2);
+st.Push(3);
+
+int top = st.Pop();       // 3
+int peek = st.Peek();     // 2
+\`\`\`
+
+## When to pick which
+
+| Need | Use |
+|---|---|
+| Lookup by key | \`Dictionary<TKey, TValue>\` |
+| Unique items, fast contains | \`HashSet<T>\` |
+| Order of insertion, indexed access | \`List<T>\` |
+| FIFO processing | \`Queue<T>\` |
+| LIFO processing | \`Stack<T>\` |
+| Sorted by key | \`SortedDictionary<TKey, TValue>\` / \`SortedSet<T>\` |`,
+    },
+    {
+      id: 'l-col-4',
+      title: 'First Unique Character',
+      type: 'challenge',
+      xp: 50,
+      challenge: {
+        description: 'Given a string, return the **index** of the first character that appears only once. Return `-1` if every character is repeated.\n\nThis is a classic LeetCode problem (#387). The natural solution is a Dictionary<char, int>.',
+        difficulty: 'easy',
+        examples: [
+          { input: '"leetcode"', output: '0', explanation: '"l" appears once and is at index 0.' },
+          { input: '"loveleetcode"', output: '2', explanation: '"v" is the first character that appears once.' },
+          { input: '"aabb"', output: '-1', explanation: 'Every character repeats.' },
+        ],
+        functionName: 'FirstUniqueChar',
+        starterCode: `using System;
+using System.Collections.Generic;
+
+public class Solution
+{
+    public int FirstUniqueChar(string s)
+    {
+        // your code here
+        return -1;
+    }
+}`,
+        solution: `using System;
+using System.Collections.Generic;
+
+public class Solution
+{
+    public int FirstUniqueChar(string s)
+    {
+        var counts = new Dictionary<char, int>();
+        foreach (var c in s)
+        {
+            if (counts.ContainsKey(c)) counts[c]++;
+            else counts[c] = 1;
+        }
+        for (int i = 0; i < s.Length; i++)
+            if (counts[s[i]] == 1) return i;
+        return -1;
+    }
+}`,
+        testCases: [
+          { input: '"leetcode"', expected: '0', description: 'leetcode → 0' },
+          { input: '"loveleetcode"', expected: '2', description: 'loveleetcode → 2' },
+          { input: '"aabb"', expected: '-1', description: 'all repeat → -1' },
+          { input: '"z"', expected: '0', description: 'single char' },
+          { input: '""', expected: '-1', description: 'empty string' },
+          { input: '"abcabd"', expected: '2', description: 'c is unique at index 2' },
+        ],
+        hints: [
+          'First pass: count each character into a Dictionary<char, int>',
+          'Second pass: walk the string in order and return the first index where count == 1',
+          'Two passes is O(n) — better than nested loops which would be O(n²)',
+        ],
+      },
+    },
+    {
+      id: 'l-col-5',
+      title: 'Collections Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What\'s the average-case time complexity of a `Dictionary<string, int>` lookup?',
+          options: ['O(1)', 'O(log n)', 'O(n)', 'O(n log n)'],
+          correctIndex: 0,
+          explanation: 'Dictionary uses a hash table — average O(1) for get/add/contains. Worst case is O(n) on heavy hash collisions.',
+        },
+        {
+          question: 'Which collection is best for "process items in the order they arrived"?',
+          options: ['Stack<T>', 'Queue<T>', 'HashSet<T>', 'Dictionary<int, T>'],
+          correctIndex: 1,
+          explanation: 'Queue is FIFO — first in, first out. Stack is LIFO. HashSet has no order at all.',
+        },
+        {
+          question: 'What does `dict[key]` throw if the key isn\'t present?',
+          options: [
+            'Returns default(TValue)',
+            'KeyNotFoundException',
+            'NullReferenceException',
+            'ArgumentException',
+          ],
+          correctIndex: 1,
+          explanation: 'On read, missing key throws KeyNotFoundException. Use TryGetValue for safe reads. On write, missing key is auto-inserted.',
+        },
+        {
+          question: 'You need a collection that drops duplicates and supports fast `Contains`. Best fit?',
+          options: ['List<T>', 'Queue<T>', 'HashSet<T>', 'SortedSet<T>'],
+          correctIndex: 2,
+          explanation: 'HashSet<T> — O(1) average Add/Contains, no duplicates. SortedSet works too but is O(log n).',
+        },
+      ],
+    },
+  ],
+};
+
+const chDelegates: Chapter = {
+  id: 'ch-delegates',
+  title: 'Delegates & Lambdas',
+  description: 'First-class functions in C#',
+  icon: 'λ',
+  lessons: [
+    {
+      id: 'l-del-1',
+      title: 'Func, Action, Predicate',
+      type: 'theory',
+      xp: 15,
+      theory: `# Delegates
+
+A **delegate** is a typed pointer to a method — it lets you pass behavior around as data.
+
+You don't usually declare your own delegate type anymore. The BCL ships three built-ins that cover almost every case:
+
+| Delegate | Shape | Returns |
+|---|---|---|
+| \`Action\` | Up to 16 inputs | nothing (\`void\`) |
+| \`Func<T1, ..., TResult>\` | Up to 16 inputs | a \`TResult\` |
+| \`Predicate<T>\` | One input | \`bool\` |
+
+\`\`\`csharp
+Action sayHi = () => Console.WriteLine("hi");
+Action<string> greet = name => Console.WriteLine($"Hello, {name}");
+Func<int, int> square = x => x * x;
+Func<int, int, int> add = (a, b) => a + b;
+Predicate<int> isEven = n => n % 2 == 0;
+
+sayHi();              // hi
+greet("Alice");       // Hello, Alice
+int s = square(5);    // 25
+int a = add(2, 3);    // 5
+bool e = isEven(4);   // true
+\`\`\`
+
+## Why this is useful
+
+Methods that accept a delegate let the caller customize behavior:
+
+\`\`\`csharp
+static int[] Filter(int[] nums, Predicate<int> keep)
+{
+    var result = new List<int>();
+    foreach (var n in nums)
+        if (keep(n)) result.Add(n);
+    return result.ToArray();
+}
+
+int[] evens = Filter(new[]{1,2,3,4,5,6}, x => x % 2 == 0);
+int[] big   = Filter(new[]{1,2,3,4,5,6}, x => x > 3);
+\`\`\`
+
+This is exactly how LINQ's \`Where\` works under the hood.
+
+## Lambdas vs methods
+
+A **lambda** is a tiny inline function:
+
+\`\`\`csharp
+Func<int, int> f = x => x * x;        // expression lambda
+Func<int, int> g = x => { return x * x; };  // statement lambda (with body)
+\`\`\`
+
+You can also assign a regular method to a delegate variable:
+
+\`\`\`csharp
+static int Square(int x) => x * x;
+
+Func<int, int> f = Square;            // method group conversion
+int n = f(7);                          // 49
+\`\`\``,
+    },
+    {
+      id: 'l-del-2',
+      title: 'Practice: Apply a Func',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'A `static int[] Map(int[] nums, Func<int, int> f)` method is given. Use it to **double** every element of `{1, 2, 3, 4}` and print each on its own line.\n\nExpected output:\n```\n2\n4\n6\n8\n```',
+        starterCode: `using System;
+
+class Program
+{
+    static int[] Map(int[] nums, Func<int, int> f)
+    {
+        var result = new int[nums.Length];
+        for (int i = 0; i < nums.Length; i++) result[i] = f(nums[i]);
+        return result;
+    }
+
+    static void Main()
+    {
+        int[] input = { 1, 2, 3, 4 };
+        // Use Map with a lambda that doubles its arg
+
+    }
+}
+`,
+        solution: `using System;
+
+class Program
+{
+    static int[] Map(int[] nums, Func<int, int> f)
+    {
+        var result = new int[nums.Length];
+        for (int i = 0; i < nums.Length; i++) result[i] = f(nums[i]);
+        return result;
+    }
+
+    static void Main()
+    {
+        int[] input = { 1, 2, 3, 4 };
+        int[] doubled = Map(input, x => x * 2);
+        foreach (var n in doubled) Console.WriteLine(n);
+    }
+}`,
+        tests: [{ expectedOutput: '2\n4\n6\n8', description: 'Each element doubled' }],
+        hints: [
+          'The lambda is `x => x * 2`',
+          'foreach over the result and Console.WriteLine each value',
+        ],
+      },
+    },
+    {
+      id: 'l-del-3',
+      title: 'Lambdas & Closures',
+      type: 'theory',
+      xp: 15,
+      theory: `# Closures
+
+A lambda **captures** variables from its enclosing scope:
+
+\`\`\`csharp
+int multiplier = 3;
+Func<int, int> times = x => x * multiplier;
+
+Console.WriteLine(times(5));   // 15
+
+multiplier = 10;
+Console.WriteLine(times(5));   // 50  -- captured by reference!
+\`\`\`
+
+The lambda doesn't snapshot \`multiplier\`'s value at creation time — it captures the **variable**. When you call the lambda later, it reads whatever value that variable has now.
+
+## The classic loop gotcha
+
+\`\`\`csharp
+var actions = new List<Action>();
+for (int i = 0; i < 3; i++)
+    actions.Add(() => Console.WriteLine(i));
+
+foreach (var a in actions) a();
+// Modern C# (>=5): prints 0, 1, 2 — each iteration captures its own i
+// Old C# (<=4):    prints 3, 3, 3 — all share the same i
+\`\`\`
+
+Modern C# made the for-loop variable per-iteration to fix this. \`foreach\` always was per-iteration.
+
+## Capturing readonly vs mutable
+
+\`\`\`csharp
+int counter = 0;
+Action tick = () => counter++;
+tick(); tick(); tick();
+Console.WriteLine(counter);   // 3
+\`\`\`
+
+The lambda mutates the captured variable. This is real shared state — be careful with it across threads.
+
+## Anatomy
+
+A statement-bodied lambda can have multiple lines:
+
+\`\`\`csharp
+Func<int, int, int> compute = (a, b) =>
+{
+    int sum = a + b;
+    int sq  = sum * sum;
+    return sq;
+};
+\`\`\``,
+    },
+    {
+      id: 'l-del-4',
+      title: 'Events',
+      type: 'theory',
+      xp: 15,
+      theory: `# Events
+
+An **event** is a delegate field with a guardrail: only the declaring class can *raise* it; outsiders can only *subscribe* and *unsubscribe*.
+
+\`\`\`csharp
+class Button
+{
+    // EventHandler is shorthand for: Action<object, EventArgs>
+    public event EventHandler? Click;
+
+    public void Press()
+    {
+        // Raise the event - notify all subscribers
+        Click?.Invoke(this, EventArgs.Empty);
+    }
+}
+
+var btn = new Button();
+btn.Click += (sender, e) => Console.WriteLine("clicked!");
+btn.Press();   // prints "clicked!"
+\`\`\`
+
+## += / -=
+
+\`\`\`csharp
+EventHandler handler = (s, e) => Console.WriteLine("hi");
+btn.Click += handler;        // subscribe
+btn.Press();                 // hi
+btn.Click -= handler;        // unsubscribe (use the SAME reference)
+btn.Press();                 // (nothing)
+\`\`\`
+
+The unsubscribe gotcha: \`-=\` only works if you have the same delegate instance you subscribed with. Lambdas are anonymous, so you usually need to hold the reference if you want to unsubscribe.
+
+## Custom event args
+
+When the event needs to carry data, define a payload type:
+
+\`\`\`csharp
+class TemperatureChangedArgs : EventArgs
+{
+    public double NewTemp { get; init; }
+}
+
+class Sensor
+{
+    public event EventHandler<TemperatureChangedArgs>? TemperatureChanged;
+
+    public void Update(double t)
+        => TemperatureChanged?.Invoke(this, new TemperatureChangedArgs { NewTemp = t });
+}
+\`\`\`
+
+## When to use events vs callbacks
+
+- One source, many listeners, optional → **event**
+- One source, one mandatory listener → **delegate parameter** (callback)
+- Cross-cutting messaging across the app → **mediator / message bus** (later)`,
+    },
+    {
+      id: 'l-del-5',
+      title: 'Delegates & Events Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Which built-in delegate represents a function that takes nothing and returns nothing?',
+          options: ['Func', 'Action', 'Predicate', 'EventHandler'],
+          correctIndex: 1,
+          explanation: '`Action` is parameterless and returns void. `Action<T>` adds parameters; `Func` always returns a value.',
+        },
+        {
+          question: 'What does a lambda capture for variables in its enclosing scope?',
+          options: [
+            'A snapshot of the value at creation time',
+            'A reference to the variable — sees later changes',
+            'Nothing — lambdas can\'t access outer variables',
+            'A deep copy of the entire scope',
+          ],
+          correctIndex: 1,
+          explanation: 'Lambdas capture variables by reference, not value. If the outer variable changes, the lambda sees the new value.',
+        },
+        {
+          question: 'Why does `event` exist when a public delegate field would also work?',
+          options: [
+            'Performance',
+            'It prevents external code from raising or replacing the delegate; only += and -= are allowed',
+            'Required by the runtime',
+            'It is just a naming convention',
+          ],
+          correctIndex: 1,
+          explanation: 'event encapsulates the delegate so subscribers can only subscribe/unsubscribe. Outside code can\'t invoke or assign null to the underlying delegate.',
+        },
+        {
+          question: 'What is `Predicate<T>` equivalent to?',
+          options: ['Func<T>', 'Func<T, bool>', 'Action<T>', 'Func<bool, T>'],
+          correctIndex: 1,
+          explanation: 'A Predicate<T> takes one T and returns a bool — same shape as Func<T, bool>.',
+        },
+      ],
+    },
+  ],
+};
+
+const chAdvLinq: Chapter = {
+  id: 'ch-adv-linq',
+  title: 'Advanced LINQ',
+  description: 'Grouping, joining, and the lazy pipeline',
+  icon: '🧠',
+  lessons: [
+    {
+      id: 'l-alq-1',
+      title: 'GroupBy & ToLookup',
+      type: 'theory',
+      xp: 15,
+      theory: `# GroupBy
+
+\`GroupBy\` partitions a sequence into groups by a key. Each group is itself an enumerable.
+
+\`\`\`csharp
+var people = new[]
+{
+    new { Name = "Alice",  Dept = "Eng"  },
+    new { Name = "Bob",    Dept = "Sales"},
+    new { Name = "Carol",  Dept = "Eng"  },
+    new { Name = "Dave",   Dept = "Sales"},
+    new { Name = "Eve",    Dept = "HR"   }
+};
+
+var byDept = people.GroupBy(p => p.Dept);
+
+foreach (var g in byDept)
+{
+    Console.WriteLine($"{g.Key}: {g.Count()}");
+    foreach (var p in g) Console.WriteLine($"  {p.Name}");
+}
+// Eng: 2
+//   Alice
+//   Carol
+// Sales: 2
+//   Bob
+//   Dave
+// HR: 1
+//   Eve
+\`\`\`
+
+The result is \`IEnumerable<IGrouping<TKey, TElement>>\` — \`IGrouping\` is just an enumerable plus a \`Key\`.
+
+## GroupBy + project
+
+Often you want to summarize per group:
+
+\`\`\`csharp
+var counts = people
+    .GroupBy(p => p.Dept)
+    .Select(g => new { Dept = g.Key, Count = g.Count() })
+    .OrderByDescending(x => x.Count);
+\`\`\`
+
+## ToLookup — eagerly indexed
+
+\`ToLookup\` is like GroupBy but it executes immediately and gives you a Dictionary-like \`ILookup<TKey, TElement>\`:
+
+\`\`\`csharp
+var lookup = people.ToLookup(p => p.Dept);
+foreach (var p in lookup["Eng"]) Console.WriteLine(p.Name);
+// Alice, Carol
+\`\`\`
+
+Use ToLookup when you need to query the same groups multiple times.`,
+    },
+    {
+      id: 'l-alq-2',
+      title: 'Practice: Group & Count',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Given the array `int[] nums = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };` group by even/odd and print each group\'s count, in this order:\n\nExpected output:\n```\nodd:5\neven:5\n```',
+        starterCode: `using System;
+using System.Linq;
+
+class Program
+{
+    static void Main()
+    {
+        int[] nums = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+        // GroupBy even/odd, project to {Key, Count}, print
+
+    }
+}
+`,
+        solution: `using System;
+using System.Linq;
+
+class Program
+{
+    static void Main()
+    {
+        int[] nums = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+        var groups = nums.GroupBy(n => n % 2 == 0 ? "even" : "odd");
+        foreach (var g in groups)
+            Console.WriteLine($"{g.Key}:{g.Count()}");
+    }
+}`,
+        tests: [{ expectedOutput: 'odd:5\neven:5', description: 'Odd group first (LINQ keeps source order)' }],
+        hints: [
+          'GroupBy(n => n % 2 == 0 ? "even" : "odd") returns groups keyed by "even" / "odd"',
+          'GroupBy preserves the order each key first appears in the source — 1 is odd so "odd" comes first',
+          'Use g.Count() inside the foreach',
+        ],
+      },
+    },
+    {
+      id: 'l-alq-3',
+      title: 'Aggregate, Join & Deferred Execution',
+      type: 'theory',
+      xp: 15,
+      theory: `# Aggregate, Join, deferred execution
+
+## Aggregate — fold the sequence into one value
+
+\`\`\`csharp
+int[] nums = { 1, 2, 3, 4, 5 };
+
+int sum = nums.Aggregate((acc, n) => acc + n);            // 15
+int product = nums.Aggregate(1, (acc, n) => acc * n);      // 120  (with seed 1)
+string csv = nums.Aggregate("", (acc, n) => acc + n + ","); // "1,2,3,4,5,"
+\`\`\`
+
+\`Sum\`, \`Min\`, \`Max\`, \`Average\` are all specialized aggregates.
+
+## Join — SQL-style joins
+
+\`\`\`csharp
+var orders = new[] { new { Id = 1, CustomerId = 10 }, new { Id = 2, CustomerId = 20 } };
+var customers = new[] { new { Id = 10, Name = "Alice" }, new { Id = 20, Name = "Bob" } };
+
+var rows = orders.Join(
+    customers,
+    o => o.CustomerId,        // outer key
+    c => c.Id,                // inner key
+    (o, c) => new { OrderId = o.Id, Customer = c.Name }
+);
+// { OrderId=1, Customer="Alice" }, { OrderId=2, Customer="Bob" }
+\`\`\`
+
+## Deferred execution
+
+LINQ is **lazy**. \`Where\`, \`Select\`, \`OrderBy\`, etc. don't run when you call them — they build a **pipeline**. Execution happens when you iterate (foreach, ToArray, ToList, Count, First, ...).
+
+\`\`\`csharp
+var pipeline = nums.Where(n => { Console.Write("."); return n > 2; });
+Console.WriteLine("built");
+
+foreach (var n in pipeline) { /* ... */ }
+// Output: built.....
+//          ^^built printed first - the dots happen when we iterate
+\`\`\`
+
+This means:
+- You can build queries cheaply
+- The sequence may be re-evaluated each time you iterate
+- Side-effects in lambdas are dangerous
+
+To **freeze** results, materialize with \`.ToList()\` or \`.ToArray()\`.
+
+## When NOT to use LINQ
+
+- Hot inner loops where allocations matter — write the loop yourself
+- Complex multi-pass logic that becomes harder to read in fluent form
+- When debugging is hard (a 6-step LINQ chain is opaque in the debugger)`,
+    },
+    {
+      id: 'l-alq-4',
+      title: 'Word Frequency Top-N',
+      type: 'challenge',
+      xp: 60,
+      challenge: {
+        description: 'Given a space-separated string of words, return the top **k** most-frequent words sorted by frequency **descending**, breaking ties alphabetically (ascending).\n\nReturn the result as a string array. If k is larger than the number of distinct words, return all of them.\n\nThe input string is non-empty and contains only lowercase letters and single spaces.',
+        difficulty: 'medium',
+        examples: [
+          { input: '"the cat sat on the mat", 2', output: '["the", "cat"]', explanation: '"the" appears twice; cat/sat/on/mat each once. Tie broken alphabetically — "cat" < "mat" < "on" < "sat".' },
+          { input: '"a b c", 5', output: '["a", "b", "c"]', explanation: 'Only 3 distinct, return all sorted.' },
+          { input: '"x x x y y z", 1', output: '["x"]' },
+        ],
+        functionName: 'TopWords',
+        starterCode: `using System;
+using System.Linq;
+using System.Collections.Generic;
+
+public class Solution
+{
+    public string[] TopWords(string text, int k)
+    {
+        // your code here
+        return new string[0];
+    }
+}`,
+        solution: `using System;
+using System.Linq;
+using System.Collections.Generic;
+
+public class Solution
+{
+    public string[] TopWords(string text, int k)
+    {
+        return text.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .GroupBy(w => w)
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key)
+            .Take(k)
+            .Select(g => g.Key)
+            .ToArray();
+    }
+}`,
+        testCases: [
+          { input: '"the cat sat on the mat", 2', expected: '["the", "cat"]', description: 'Tie broken alphabetically' },
+          { input: '"a b c", 5', expected: '["a", "b", "c"]', description: 'k larger than distinct count' },
+          { input: '"x x x y y z", 1', expected: '["x"]', description: 'Top-1' },
+          { input: '"banana apple apple cherry banana banana", 2', expected: '["banana", "apple"]', description: 'Clear ranking' },
+          { input: '"red blue green", 3', expected: '["blue", "green", "red"]', description: 'All tied → all alphabetical' },
+        ],
+        hints: [
+          'Use Split(\' \', StringSplitOptions.RemoveEmptyEntries)',
+          'Chain: GroupBy(w => w).OrderByDescending(g => g.Count()).ThenBy(g => g.Key)',
+          'Take(k).Select(g => g.Key).ToArray() to finish',
+        ],
+      },
+    },
+    {
+      id: 'l-alq-5',
+      title: 'Advanced LINQ Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: '`Aggregate` with a seed of 1 and `(a, n) => a * n` over `{1, 2, 3, 4}` produces what?',
+          options: ['10', '24', '15', '0'],
+          correctIndex: 1,
+          explanation: 'It computes the product: 1 × 1 × 2 × 3 × 4 = 24.',
+        },
+        {
+          question: 'Which method **forces** a LINQ pipeline to execute?',
+          options: ['Where', 'Select', 'OrderBy', 'ToList'],
+          correctIndex: 3,
+          explanation: 'Where/Select/OrderBy build the pipeline lazily. ToList, ToArray, Count, First, etc. trigger execution.',
+        },
+        {
+          question: 'What does GroupBy preserve in its output?',
+          options: [
+            'Insertion order of distinct keys (the order each key first appears)',
+            'Alphabetical key order',
+            'Random order',
+            'Reverse insertion order',
+          ],
+          correctIndex: 0,
+          explanation: 'Groups appear in the order their key was first seen in the source. Use OrderBy(g => g.Key) to sort alphabetically.',
+        },
+        {
+          question: 'What happens if you iterate the same `Where(...)` query twice?',
+          options: [
+            'The second iteration is cached',
+            'It re-evaluates every iteration — predicate runs again',
+            'It throws',
+            'Only the first iteration works',
+          ],
+          correctIndex: 1,
+          explanation: 'LINQ queries are lazy and re-execute on each iteration. Materialize with ToList()/ToArray() if you want to freeze the result.',
+        },
+      ],
+    },
+  ],
+};
+
 // __END_CHAPTERS__
 
 export const csharpCourse: Course = {
@@ -3531,13 +4612,17 @@ export const csharpCourse: Course = {
     chMethodParams,
     chConsoleIO,
     ch7Collections,
+    chCollections,
     ch8Strings,
     chStringsAdv,
     ch9OopBasics,
     chAccess,
     chEnums,
     ch10Inheritance,
+    chGenerics,
+    chDelegates,
     ch11Linq,
+    chAdvLinq,
     ch12Exceptions,
     ch13Milestone,
   ],
