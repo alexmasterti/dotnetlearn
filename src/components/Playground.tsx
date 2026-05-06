@@ -189,11 +189,17 @@ export function Playground() {
     setFrameIdx((current) => {
       const cur = frames[current - 1];
       if (!cur) return Math.min(current + 1, frames.length);
-      // Advance through any frames that are in a DIFFERENT method (means we
-      // entered a callee). Stop on the next frame back in the original method,
-      // or when we run out of frames.
+      // Heuristic without runtime call-stack tracking: build the set of methods
+      // we've already visited up to and including the current frame. Then
+      // advance forward, skipping frames whose method we have NOT seen before
+      // (= we entered a deeper callee). Stop at the first frame whose method
+      // is in our visited set — that's either the same method continuing, or
+      // a caller we've returned to. Works for the common cases (calls and
+      // returns); breaks down on recursion (see DEBUGGER_PLAN.md).
+      const seenBefore = new Set<string>();
+      for (let i = 0; i < current; i++) seenBefore.add(frames[i].method);
       let i = current;
-      while (i < frames.length && frames[i].method !== cur.method) i++;
+      while (i < frames.length && !seenBefore.has(frames[i].method)) i++;
       return Math.min(i + 1, frames.length);
     });
   }, [frames]);
