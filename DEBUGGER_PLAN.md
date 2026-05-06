@@ -1,74 +1,94 @@
 # Debugger Roadmap & Known Limitations
 
 The Playground has a "time-travel" debugger built on instrumenting user code
-and replaying captured frames. This doc tracks open work and the limits of
-the current approach so the next session can pick up.
+and replaying captured frames. As of this doc the originally-reported issues
+are all resolved; this file is now a reference for the architecture and the
+remaining-edge-case backlog.
 
-## Architecture (current)
+## Architecture
 
-- `src/lib/tracer.ts` — JS regex-based instrumentation pass that injects
-  `__Tracer.Pos(line, method)` and `__Tracer.Mark(line, method, name, value)`
-  calls into user C# before sending it to WandBox.
-- The C# `__Tracer` class writes one `__TRACE__:<step>|<line>|<method>|<name>|<value>` per call to stdout.
-- `parseTraceOutput` rebuilds these into `TraceFrame[]`. Each frame is a
-  cumulative snapshot of all variables seen so far.
+- `src/lib/tracer.ts` — JS regex-based instrumentation pass. Transforms user
+  C# before sending it to WandBox by:
+  - Splitting single-line `{ stmt; }` bodies into multi-line form so the
+    body is at instrumentable depth.
+  - Injecting `__Tracer.Enter(); try {` after the `{` of every method body
+    and `} finally { __Tracer.Leave(); }` before the matching `}` so call
+    depth is tracked at runtime.
+  - Marking each method parameter right after `Enter()` so they appear in
+    the variables panel from the first frame.
+  - Inserting `__Tracer.Pos(line, method)` before each statement (= the
+    point at which a paused-at-this-line frame is captured).
+  - Inserting `__Tracer.Mark(line, method, name, value)` after each local
+    declaration, assignment, compound assignment, increment/decrement, AND
+    after `<receiver>.method(...)` calls when the receiver is a tracked
+    local (refreshes object fields after mutating calls).
+- The C# `__Tracer` class writes one
+  `__TRACE__:<step>|<line>|<method>|<depth>|<name>|<value>` per call to
+  stdout. For non-primitive object values, `Mark` also reflects over public
+  + non-public instance fields and public properties of "simple" types
+  (primitives, enums, `string`, `decimal`, nullable wrappers) and emits
+  one extra trace line per field/property as `<baseName>.<fieldName>`.
+- `parseTraceOutput` rebuilds these into `TraceFrame[]`. Each frame holds:
+  - `step`, `line`, `method`, `depth`
+  - `variables` — snapshot of live variables, with entries whose recorded
+    depth exceeds the frame's depth filtered out (per-scope cleanup; no
+    explicit `__SCOPE_END` marker needed)
+  - `output` — cumulative program stdout produced before this frame, so
+    the UI can reveal output progressively while stepping
 - `src/components/Playground.tsx` exposes Back / Step Over / Step Into /
-  Step Out / Continue controls + breakpoint gutter + line highlight + hover
-  tooltip + F10/F11/F5 keyboard shortcuts.
+  Step Out / Continue / Restart / Stop controls, breakpoint gutter, current-
+  line highlight, hover tooltip (with dotted-path support for `obj.id`),
+  variables panel, and an output panel that reads `currentFrame.output`
+  while paused. Keyboard: F10/F11/Shift+F11/F5/Shift+F5/Ctrl+Shift+F5.
 
-## Known issues (reported by user, NOT yet fixed)
+## Originally-reported issues (all resolved)
 
-### 1. Object variables show only ToString (not field-by-field) — DONE
+1. ✅ **Object variables show only ToString.** Reflection-based field dump
+   for non-primitive, non-IEnumerable, non-System types. Backing fields
+   (`<...>k__BackingField`) filtered.
+2. ✅ **Step Over stuck inside callees.** Real call-depth tracking via
+   injected `Enter()`/`Leave()` in try/finally. Step Over advances until
+   `depth ≤ current.depth`; Step Out until `depth < current.depth`.
+   Works for recursion.
+3. ✅ **Variables panel leaks across scopes.** Per-Mark depth recorded;
+   parser drops variables whose depth exceeds the next frame's depth.
+4. ✅ **Hover doesn't see method parameters.** Param names captured from
+   the signature regex and Marked right after `Enter()` so they're live
+   from the first frame inside the method.
+5. ✅ **Object fields stale after mutating call.** `<receiver>.method(...)`
+   triggers a follow-up Mark on the receiver if it's a tracked local, so
+   the reflection field dump re-runs and `obj.Id` reflects the new value.
+6. ✅ **Output appeared all-at-once.** Each frame snapshots cumulative
+   stdout; Playground renders `currentFrame.output` while paused.
+7. ✅ **Hover on dotted paths.** `obj.id` resolves to the dotted variable;
+   if the dotted form isn't tracked, falls back to the parent.
 
-Resolved by emitting reflection-based field/property dump for non-primitive,
-non-IEnumerable, non-System-namespace types. Each Mark of an object emits the
-parent line plus one trace line per simple-typed field/property
-(`obj.id = 1`, `obj.model = ""`). Auto-property backing fields (names starting
-with `<`) are filtered, then properties cover the public surface. Nested class
-fields are skipped (depth=1) to avoid cycles. Implementation in
-`TRACER_FOOTER` of `src/lib/tracer.ts`. CodeEditor hover updated to walk
-dotted identifiers (`obj.id`) and fall back to parent on miss.
+## Known limitations (acceptable for v1, documented for future work)
 
-### 2. Step Over stuck inside callees — DONE
+- **Expression-bodied members** (`int X() => ...;`, `int Y => _y;`) have
+  no `{...}` block, so they don't get Enter/Leave injection. Calls into
+  them won't increment depth. Property accessors with bodies are also
+  skipped — they live at depth 3 (class → property → accessor) which our
+  push-on-1→2 logic doesn't cover.
+- **Local functions** (`void Outer() { void Inner() {} }`) — Inner opens
+  at depth 2→3, not tracked.
+- **Single-line empty bodies** like `public Vehicule() { }` aren't split
+  by the line-expander (regex requires `(.+;)` inside) and the Enter/try
+  injector requires `{` at end-of-line, `}` at start-of-line — so empty
+  bodies on a single line don't get instrumented. Calls to them work but
+  don't show a frame.
+- **Variable name shadowing across scopes**: if Main has `int total` and
+  callee `soma` declares `int total`, the callee's Mark overwrites the
+  parent entry. On return to Main, the scope-filter drops the callee's
+  entry, leaving Main's `total` undefined until the next Main-scope Mark
+  re-sets it. Acceptable; rare in well-formed code.
+- **Output ordering**: the parser interleaves stdout with marker lines by
+  scanning sequentially, so a `Console.Write` (no newline) emitted between
+  two markers may end up tagged to the wrong frame. WriteLine is fine.
+- **MAX_TRACE_PER_RUN = 1500** — long loops or deep recursion get truncated.
+  Bump if it becomes an issue.
 
-Resolved by injecting `__Tracer.Enter()` / `Leave()` around every method
-body via a try/finally wrapper. The instrumentation pass detects the line
-where a method's `{` opens (depth 1→2) and the line where its `}` closes
-(depth 2→1), and emits:
-
-```csharp
-void Foo() {
-    __Tracer.Enter(); try {     // injected
-        // user code
-    } finally { __Tracer.Leave(); }   // injected
-}
-```
-
-Each `Pos` and `Mark` marker now carries the runtime depth. Step controls
-became precise:
-- **Step Over**: advance until next frame with `depth ≤ current.depth`
-- **Step Into**: advance to next frame (no constraint)
-- **Step Out**: advance until next frame with `depth < current.depth`
-
-Works for recursion (each recursive call increments depth). Limitation:
-expression-bodied methods (`int X() => ...;`) and accessor-only properties
-have no `{...}` block, so their bodies don't get Enter/Leave.
-
-### 3. Variables panel leaks across scopes — DONE
-
-Falls out of #2 automatically. Each `Mark` records the depth at which a
-variable was set; on every `Pos` the parser drops variables whose recorded
-depth exceeds the new depth (those scopes have returned). No separate
-`__SCOPE_END` marker needed — the depth on `Pos` is the source of truth.
-
-### 4. Hover values don't refresh on scrub
-
-Tooltips read `view.state.field(variablesField)` which is updated via
-`useEffect([variables])`. Should be fine but worth verifying after the
-field-dump change for #1 (objects with field paths like `obj.id` would need
-the hover to handle `.` in identifiers).
-
-## Mono 6.12 sandbox-specific gotchas to remember
+## Mono 6.12 sandbox-specific gotchas
 
 These bit us during the debugger work — keep in mind for future tracer changes:
 
@@ -84,34 +104,23 @@ These bit us during the debugger work — keep in mind for future tracer changes
 - **Warnings come on stderr.** `useCSharpRunner.ts` distinguishes
   `severity === 'error'` vs `'warning'` so a CS0169-only build runs.
 
-## What VS Code actually does (for reference, when redoing #2)
+## What VS Code actually does (for reference)
 
 VS Code's debugger talks to a debug adapter (DAP) that controls a real
-running process. For C#, the adapter is .NET's debugger. It exposes:
+running process. Our recording approximates this with a deterministic
+trace replay. The closest we could get without a real adapter would be
+self-hosting a Roslyn-script + debugger service on Railway and talking
+DAP over WebSocket — significantly bigger, unlocks live execution
+(change values, hit breakpoint mid-loop, etc.) but doesn't change the
+fundamental UX.
 
-- **Stack frame list**: each frame has function name, source location, scope.
-- **Scopes**: locals, arguments, this, statics. Each scope holds variables.
-- **Variables**: lazy-fetched per scope, expandable on click for object fields.
-- **Step requests**: `stepIn`, `stepOut`, `next` (= step over). The runtime
-  controls program counter + call depth; the adapter just relays user intent.
+## Possible next steps (not blocking)
 
-Our recording approximates this. To get closer, we'd need either:
-- **Call-depth tracking** (option #2 above) — no real adapter, but our
-  recording behaves like a proper backwards-deterministic debugger.
-- **Server-side .NET debugger.** Self-host a Roslyn-script + debugger
-  service on Railway, talk DAP over WebSocket. Significantly bigger but
-  unlocks live execution (change values, hit breakpoint mid-loop, etc).
-
-The honest framing: we're building a "trace replay" UI that looks like a
-debugger. Some user expectations will diverge from a real attached debugger.
-Document those clearly so users aren't surprised.
-
-## Suggested next-session order
-
-1. ~~Fix #1 (object field display)~~ — **DONE.**
-2. ~~Fix #2 (call-depth tracking)~~ — **DONE.**
-3. ~~Fix #3 (per-scope variables)~~ — **DONE.**
-4. Optional: **VS-code-tab-style call stack panel.** Shows the chain of
-   method calls leading to the current frame. UI-only — each frame already
-   has depth + method name; build the stack by walking back from the current
-   frame, stopping when depth drops.
+- **Call stack panel.** Each frame already has `depth` + `method`; walk
+  backwards from the current frame, picking the nearest preceding frame
+  at each lower depth, to build the chain.
+- **Step Into/Out keyboard hint overlay** for first-time users.
+- **MAX_TRACE_PER_RUN configurable** with a UI banner when truncated.
+- **Self-hosted .NET 9 sandbox** (separate from debugger work) so newer
+  language features can be debugged too — the tracer regexes would need
+  updating for `record`/`init`/etc.
