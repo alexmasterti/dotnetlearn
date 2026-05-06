@@ -155,9 +155,9 @@ class Program
         description: 'Return the greeting `"Hello, <name>!"` (note the comma, space, and exclamation mark) for any name.\n\nIf the name is empty, return `"Hello, friend!"`.',
         difficulty: 'easy',
         examples: [
-          { input: '"Alex"', output: '"Hello, Alex!"' },
-          { input: '"World"', output: '"Hello, World!"' },
-          { input: '""', output: '"Hello, friend!"', explanation: 'Empty name → fallback to friend' },
+          { input: '"Alex"', output: 'Hello, Alex!' },
+          { input: '"World"', output: 'Hello, World!' },
+          { input: '""', output: 'Hello, friend!', explanation: 'Empty name → fallback to friend' },
         ],
         functionName: 'Greet',
         starterCode: `using System;
@@ -181,10 +181,10 @@ public class Solution
     }
 }`,
         testCases: [
-          { input: '"Alex"', expected: '"Hello, Alex!"', description: 'Standard name' },
-          { input: '"World"', expected: '"Hello, World!"', description: 'Another name' },
-          { input: '""', expected: '"Hello, friend!"', description: 'Empty fallback' },
-          { input: '"Maria"', expected: '"Hello, Maria!"', description: 'Different name' },
+          { input: '"Alex"', expected: 'Hello, Alex!', description: 'Standard name' },
+          { input: '"World"', expected: 'Hello, World!', description: 'Another name' },
+          { input: '""', expected: 'Hello, friend!', description: 'Empty fallback' },
+          { input: '"Maria"', expected: 'Hello, Maria!', description: 'Different name' },
         ],
         hints: [
           'Check for empty first: `if (string.IsNullOrEmpty(name)) return "Hello, friend!";`',
@@ -3894,6 +3894,55 @@ class Pair<T>
         },
       ],
     },
+    {
+      id: 'l-gen-challenge',
+      title: 'Challenge: First Non-Empty',
+      type: 'challenge',
+      xp: 40,
+      challenge: {
+        description: 'Given an array of strings, return the **first** non-null and non-empty one. If none qualify, return `(empty)` (no quotes — just the literal text).\n\nUse a generic LINQ method like `FirstOrDefault` with a predicate.',
+        difficulty: 'easy',
+        examples: [
+          { input: '["", "hi", "world"]', output: 'hi' },
+          { input: '["a"]', output: 'a' },
+          { input: '["", ""]', output: '(empty)' },
+        ],
+        functionName: 'FirstNonEmpty',
+        starterCode: `using System;
+using System.Linq;
+
+public class Solution
+{
+    public string FirstNonEmpty(string[] strs)
+    {
+        // your code here
+        return "";
+    }
+}`,
+        solution: `using System;
+using System.Linq;
+
+public class Solution
+{
+    public string FirstNonEmpty(string[] strs)
+    {
+        return strs.FirstOrDefault(s => !string.IsNullOrEmpty(s)) ?? "(empty)";
+    }
+}`,
+        testCases: [
+          { input: '["", "hi", "world"]', expected: 'hi', description: 'Skip empty, take first' },
+          { input: '["a"]', expected: 'a', description: 'Single non-empty' },
+          { input: '["", ""]', expected: '(empty)', description: 'All empty' },
+          { input: '[]', expected: '(empty)', description: 'Zero items' },
+          { input: '["x", "y"]', expected: 'x', description: 'Both non-empty' },
+        ],
+        hints: [
+          '`strs.FirstOrDefault(predicate)` returns the first match or null',
+          'Predicate via lambda: `s => !string.IsNullOrEmpty(s)`',
+          'Use `??` to fall back when the result is null',
+        ],
+      },
+    },
   ],
 };
 
@@ -4461,6 +4510,56 @@ class Sensor
           explanation: 'A Predicate<T> takes one T and returns a bool — same shape as Func<T, bool>.',
         },
       ],
+    },
+    {
+      id: 'l-del-challenge',
+      title: 'Challenge: Filter Evens',
+      type: 'challenge',
+      xp: 40,
+      challenge: {
+        description: 'Given an int array, return a new int array containing only the **even** values, in the original order.\n\nUse `Where(predicate)` rather than a manual loop — `Where` accepts a delegate.',
+        difficulty: 'easy',
+        examples: [
+          { input: '[1, 2, 3, 4, 5]', output: '[2, 4]' },
+          { input: '[1, 3, 5]', output: '[]' },
+          { input: '[2, 4, 6]', output: '[2, 4, 6]' },
+        ],
+        functionName: 'FilterEvens',
+        starterCode: `using System;
+using System.Linq;
+
+public class Solution
+{
+    public int[] FilterEvens(int[] nums)
+    {
+        // use Where(...) with a lambda predicate
+        return new int[0];
+    }
+}`,
+        solution: `using System;
+using System.Linq;
+
+public class Solution
+{
+    public int[] FilterEvens(int[] nums)
+    {
+        return nums.Where(n => n % 2 == 0).ToArray();
+    }
+}`,
+        testCases: [
+          { input: '[1, 2, 3, 4, 5]', expected: '[2, 4]', description: 'Mixed' },
+          { input: '[1, 3, 5]', expected: '[]', description: 'All odd' },
+          { input: '[2, 4, 6]', expected: '[2, 4, 6]', description: 'All even' },
+          { input: '[]', expected: '[]', description: 'Empty input' },
+          { input: '[0]', expected: '[0]', description: 'Zero is even' },
+          { input: '[-2, -1, 0, 1, 2]', expected: '[-2, 0, 2]', description: 'Negatives ok' },
+        ],
+        hints: [
+          '`nums.Where(predicate)` filters by a delegate',
+          'Predicate: `n => n % 2 == 0`',
+          '`Where` returns IEnumerable; finish with `.ToArray()`',
+        ],
+      },
     },
   ],
 };
@@ -5582,6 +5681,55 @@ class Program
           explanation: 'using declarations call Dispose at the end of the enclosing scope. Critical for streams to release file handles.',
         },
       ],
+    },
+    {
+      id: 'l-io-challenge',
+      title: 'Challenge: Second CSV Column',
+      type: 'challenge',
+      xp: 35,
+      challenge: {
+        description: 'Given a comma-separated line like `"alice,30,seattle"`, return the **second column** (`30`). If the line has fewer than 2 columns, return the empty string.\n\nFile-IO chapters often start with one-line-at-a-time parsing — same skill, no IO ceremony required.',
+        difficulty: 'easy',
+        examples: [
+          { input: '"alice,30,seattle"', output: '30' },
+          { input: '"x,y,z"', output: 'y' },
+          { input: '"hi"', output: '', explanation: 'Only one column' },
+        ],
+        functionName: 'SecondColumn',
+        starterCode: `using System;
+
+public class Solution
+{
+    public string SecondColumn(string line)
+    {
+        // split on \',\' and return parts[1] if present
+        return "";
+    }
+}`,
+        solution: `using System;
+
+public class Solution
+{
+    public string SecondColumn(string line)
+    {
+        var parts = line.Split(',');
+        return parts.Length >= 2 ? parts[1] : "";
+    }
+}`,
+        testCases: [
+          { input: '"alice,30,seattle"', expected: '30', description: 'Three cols' },
+          { input: '"x,y,z"', expected: 'y', description: 'Three cols' },
+          { input: '"hi"', expected: '', description: 'Single col' },
+          { input: '""', expected: '', description: 'Empty line' },
+          { input: '"a,b"', expected: 'b', description: 'Two cols' },
+          { input: '"first,,third"', expected: '', description: 'Empty middle' },
+        ],
+        hints: [
+          '`line.Split(\',\')` returns a string array',
+          'Guard for fewer than 2 columns: `parts.Length >= 2 ? parts[1] : ""`',
+          'Real CSV is messier (quotes, escaped commas). Use a library like CsvHelper for production.',
+        ],
+      },
     },
   ],
 };
@@ -6996,6 +7144,58 @@ class Program
         },
       ],
     },
+    {
+      id: 'l-pat-challenge',
+      title: 'Challenge: Describe Number',
+      type: 'challenge',
+      xp: 40,
+      challenge: {
+        description: 'Return one of these strings depending on the input integer:\n\n- `n < 0` → `negative`\n- `n == 0` → `zero`\n- `1 ≤ n ≤ 9` → `small`\n- `n ≥ 10` → `big`\n\nUse a **switch expression** with relational and `and` patterns rather than nested ifs.',
+        difficulty: 'easy',
+        examples: [
+          { input: '-5', output: 'negative' },
+          { input: '0', output: 'zero' },
+          { input: '7', output: 'small' },
+          { input: '100', output: 'big' },
+        ],
+        functionName: 'DescribeNumber',
+        starterCode: `using System;
+
+public class Solution
+{
+    public string DescribeNumber(int n)
+    {
+        // switch expression with relational patterns
+        return "";
+    }
+}`,
+        solution: `using System;
+
+public class Solution
+{
+    public string DescribeNumber(int n) => n switch
+    {
+        < 0           => "negative",
+        0             => "zero",
+        >= 1 and <= 9 => "small",
+        _             => "big",
+    };
+}`,
+        testCases: [
+          { input: '-5', expected: 'negative', description: 'Negative' },
+          { input: '0', expected: 'zero', description: 'Zero' },
+          { input: '1', expected: 'small', description: 'Lower bound small' },
+          { input: '9', expected: 'small', description: 'Upper bound small' },
+          { input: '10', expected: 'big', description: 'Lower bound big' },
+          { input: '999', expected: 'big', description: 'Big' },
+        ],
+        hints: [
+          'Switch expression: `n switch { pattern => result, ... }`',
+          'Relational patterns: `< 0`, `>= 10`',
+          'Combine ranges with `and`: `>= 1 and <= 9`',
+        ],
+      },
+    },
   ],
 };
 
@@ -7159,6 +7359,68 @@ class Program
           'Method signature: `static (int min, int max) Range(int[] nums)`',
           'Body can be expression-bodied: `=> (nums.Min(), nums.Max());`',
           'Deconstruct with `var (lo, hi) = Range(nums);`',
+        ],
+      },
+    },
+    {
+      id: 'l-tup-challenge',
+      title: 'Challenge: Range (max − min)',
+      type: 'challenge',
+      xp: 40,
+      challenge: {
+        description: 'Given a non-empty int array, return `max − min` (the range).\n\nWrite a tuple-returning helper `static (int Min, int Max) MinMax(int[] xs)` that does both in one pass, then deconstruct the result and subtract.',
+        difficulty: 'easy',
+        examples: [
+          { input: '[5, 2, 9, 1]', output: '8', explanation: '9 − 1 = 8' },
+          { input: '[3, 3, 3]', output: '0' },
+          { input: '[10]', output: '0' },
+        ],
+        functionName: 'Range',
+        starterCode: `using System;
+
+public class Solution
+{
+    public int Range(int[] nums)
+    {
+        // var (min, max) = MinMax(nums);
+        // return max - min;
+        return 0;
+    }
+
+    // helper: return both as a tuple
+}`,
+        solution: `using System;
+
+public class Solution
+{
+    public int Range(int[] nums)
+    {
+        var (min, max) = MinMax(nums);
+        return max - min;
+    }
+
+    private static (int Min, int Max) MinMax(int[] nums)
+    {
+        int min = nums[0], max = nums[0];
+        for (int i = 1; i < nums.Length; i++)
+        {
+            if (nums[i] < min) min = nums[i];
+            if (nums[i] > max) max = nums[i];
+        }
+        return (min, max);
+    }
+}`,
+        testCases: [
+          { input: '[5, 2, 9, 1]', expected: '8', description: 'Mixed' },
+          { input: '[3, 3, 3]', expected: '0', description: 'All same' },
+          { input: '[10]', expected: '0', description: 'Single element' },
+          { input: '[1, 2, 3, 4, 5]', expected: '4', description: 'Sorted' },
+          { input: '[-3, 0, 3]', expected: '6', description: 'Crosses zero' },
+        ],
+        hints: [
+          'Helper signature: `static (int Min, int Max) MinMax(int[] xs)`',
+          'Deconstruct: `var (min, max) = MinMax(nums);`',
+          'Single pass: initialize min and max with nums[0], then walk',
         ],
       },
     },
@@ -7387,6 +7649,72 @@ Materialize once if you need the side effect to run only once: \`var list = Loud
           explanation: 'Lazy iteration uses constant memory regardless of length, supports infinite sequences, and stops as soon as the consumer is satisfied.',
         },
       ],
+    },
+    {
+      id: 'l-it-challenge',
+      title: 'Challenge: First N Fibonaccis',
+      type: 'challenge',
+      xp: 45,
+      challenge: {
+        description: 'Return the first `n` Fibonacci numbers as an int array, starting `0, 1, 1, 2, 3, 5, ...`.\n\nWrite an infinite iterator with `yield return`, then `Take(n).ToArray()` in the function body.',
+        difficulty: 'easy',
+        examples: [
+          { input: '0', output: '[]' },
+          { input: '1', output: '[0]' },
+          { input: '5', output: '[0, 1, 1, 2, 3]' },
+          { input: '7', output: '[0, 1, 1, 2, 3, 5, 8]' },
+        ],
+        functionName: 'FibFirstN',
+        starterCode: `using System;
+using System.Collections.Generic;
+using System.Linq;
+
+public class Solution
+{
+    public int[] FibFirstN(int n)
+    {
+        // return Fib().Take(n).ToArray();
+        return new int[0];
+    }
+
+    // private static IEnumerable<int> Fib() { yield ... }
+}`,
+        solution: `using System;
+using System.Collections.Generic;
+using System.Linq;
+
+public class Solution
+{
+    public int[] FibFirstN(int n)
+    {
+        return Fib().Take(n).ToArray();
+    }
+
+    private static IEnumerable<int> Fib()
+    {
+        int a = 0, b = 1;
+        while (true)
+        {
+            yield return a;
+            (a, b) = (b, a + b);
+        }
+    }
+}`,
+        testCases: [
+          { input: '0', expected: '[]', description: 'Zero' },
+          { input: '1', expected: '[0]', description: 'One' },
+          { input: '2', expected: '[0, 1]', description: 'Two' },
+          { input: '5', expected: '[0, 1, 1, 2, 3]', description: 'Five' },
+          { input: '7', expected: '[0, 1, 1, 2, 3, 5, 8]', description: 'Seven' },
+          { input: '10', expected: '[0, 1, 1, 2, 3, 5, 8, 13, 21, 34]', description: 'Ten' },
+        ],
+        hints: [
+          '`yield return` produces values lazily — the iterator state pauses between yields',
+          'Infinite iterator pattern: `while (true) { yield return ...; advance state; }`',
+          'Tuple-swap to advance: `(a, b) = (b, a + b);`',
+          '`Fib().Take(n).ToArray()` materializes only what is asked for',
+        ],
+      },
     },
   ],
 };
