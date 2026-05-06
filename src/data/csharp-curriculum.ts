@@ -4594,6 +4594,947 @@ public class Solution
   ],
 };
 
+const chNRT: Chapter = {
+  id: 'ch-nrt',
+  title: 'Null Safety',
+  description: 'Nullable references, ?. and ??',
+  icon: '🚫',
+  lessons: [
+    {
+      id: 'l-nrt-1',
+      title: 'Null is the billion-dollar mistake',
+      type: 'theory',
+      xp: 15,
+      theory: `# Nullable Reference Types
+
+The most common runtime error in any .NET app is \`NullReferenceException\` — accessing a member on a \`null\` reference. Modern C# has built-in tools to push detection to **compile time**.
+
+## The annotation
+
+In a project with \`<Nullable>enable</Nullable>\` (default for new templates), every reference type defaults to **non-nullable**:
+
+\`\`\`csharp
+string name = null;     // warning: cannot assign null to non-nullable
+string? maybe = null;   // OK — explicit ?
+\`\`\`
+
+The \`?\` is **just a hint to the compiler** — it doesn't change runtime behavior. Both \`string\` and \`string?\` are the same type at runtime.
+
+## ?. — null-conditional access
+
+\`\`\`csharp
+string? s = GetName();
+int? len = s?.Length;          // null if s is null, else s.Length
+\`\`\`
+
+Cascade safely:
+
+\`\`\`csharp
+int? floor = building?.Address?.Floor;
+\`\`\`
+
+## ?? — null-coalescing
+
+\`\`\`csharp
+string name = maybe ?? "anonymous";   // use "anonymous" if maybe is null
+\`\`\`
+
+Combine with \`?.\`:
+
+\`\`\`csharp
+int len = s?.Length ?? 0;
+\`\`\`
+
+## ??= — assign-if-null
+
+\`\`\`csharp
+_cache ??= LoadCache();   // assign only if currently null
+\`\`\`
+
+Equivalent to \`if (_cache == null) _cache = LoadCache();\` but one line.
+
+## ! — null-forgiving operator
+
+When the compiler complains about null but you *know* it's not:
+
+\`\`\`csharp
+string MustBeSet = config["AppName"]!;   // I promise it's there
+\`\`\`
+
+Use sparingly — you're telling the compiler to trust you. If you're wrong, you get a runtime NRE.`,
+    },
+    {
+      id: 'l-nrt-2',
+      title: 'Practice: Safe Defaults',
+      type: 'code',
+      xp: 25,
+      codeExercise: {
+        instructions: 'Given a `string` named `input` (set to `null` for testing), use the null-coalescing operator `??` to print `"(none)"` when input is null, otherwise print input.\n\n**Note:** in a project with `<Nullable>enable</Nullable>` you would write `string?` to mark it nullable. Our sandbox uses an older compiler so we omit the `?`.\n\nExpected output:\n```\n(none)\n```',
+        starterCode: `using System;
+
+class Program
+{
+    static void Main()
+    {
+        string input = null;
+        // Print input ?? "(none)"
+
+    }
+}
+`,
+        solution: `using System;
+
+class Program
+{
+    static void Main()
+    {
+        string input = null;
+        Console.WriteLine(input ?? "(none)");
+    }
+}`,
+        tests: [{ expectedOutput: '(none)', description: 'Null falls back to "(none)"' }],
+        hints: [
+          'The null-coalescing operator is `??`',
+          '`input ?? "(none)"` returns input when it\'s non-null, otherwise the right side',
+        ],
+      },
+    },
+    {
+      id: 'l-nrt-3',
+      title: 'Null Safety Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What does `s?.Length` return if `s` is null?',
+          options: ['0', 'null', 'NullReferenceException', '-1'],
+          correctIndex: 1,
+          explanation: 'The null-conditional operator short-circuits: if s is null, the whole expression is null (and the type becomes int? rather than int).',
+        },
+        {
+          question: 'Which operator means "assign only if currently null"?',
+          options: ['??', '?.', '??=', '!?'],
+          correctIndex: 2,
+          explanation: '`??=` is the null-coalescing assignment. Useful for lazy initialization.',
+        },
+        {
+          question: 'Does `string?` produce different IL/runtime than `string`?',
+          options: [
+            'Yes, completely different types',
+            'No — same runtime type; the `?` is a compile-time annotation',
+            'Yes, `string?` is a generic',
+            'Only on .NET Framework',
+          ],
+          correctIndex: 1,
+          explanation: 'NRT is purely a compile-time feature. At runtime they\'re the same type. The annotations help the compiler warn about probable nulls.',
+        },
+        {
+          question: 'When should you use the `!` null-forgiving operator?',
+          options: [
+            'Anywhere the compiler complains',
+            'Only when you have proof the value isn\'t null and the compiler can\'t see it',
+            'Always — it\'s faster',
+            'Never',
+          ],
+          correctIndex: 1,
+          explanation: '`!` says "trust me, it\'s not null." Misuse causes runtime NREs. Use sparingly and document why you know.',
+        },
+      ],
+    },
+  ],
+};
+
+const chValueRef: Chapter = {
+  id: 'ch-value-ref',
+  title: 'Value vs Reference Types',
+  description: 'Stack, heap, and the boxing trap',
+  icon: '⚖️',
+  lessons: [
+    {
+      id: 'l-vr-1',
+      title: 'Two kinds of types',
+      type: 'theory',
+      xp: 15,
+      theory: `# Value types vs Reference types
+
+Every C# type is either a **value type** or a **reference type**. The difference shows up in how variables hold them and how they're passed around.
+
+## Value types
+
+Stored **inline** — the variable IS the value. Copy on assignment.
+
+Examples: \`int\`, \`double\`, \`bool\`, \`char\`, \`enum\`, all \`struct\`s.
+
+\`\`\`csharp
+int a = 5;
+int b = a;     // b is a copy
+b = 99;
+Console.WriteLine(a);  // still 5
+\`\`\`
+
+## Reference types
+
+Stored **by reference** — the variable holds a pointer to an object on the **heap**.
+
+Examples: \`class\`, \`string\`, arrays, delegates, interfaces.
+
+\`\`\`csharp
+class Box { public int Value; }
+
+var x = new Box { Value = 5 };
+var y = x;       // y points to the SAME box
+y.Value = 99;
+Console.WriteLine(x.Value);  // 99 — same object
+\`\`\`
+
+## Equality
+
+\`==\` for value types compares values; for reference types it compares **identity** (are these the same object?). \`string\` is a famous exception: it overrides \`==\` to compare contents.
+
+\`\`\`csharp
+new Box { Value = 5 } == new Box { Value = 5 };  // false: different objects
+"abc" == "abc";                                   // true: string overrides ==
+5 == 5;                                           // true: value comparison
+\`\`\`
+
+Use \`Equals\` or override it for content equality on classes.
+
+## Stack vs heap (rule of thumb)
+
+- Local **value-type variables** → stack
+- All **objects** (reference types) → heap
+- Value types **inside** an object → live on the heap with the object
+- The rule isn't really about value vs reference — it's about *where the variable lives* — but "value = stack" is a useful default.`,
+    },
+    {
+      id: 'l-vr-2',
+      title: 'Boxing & Unboxing',
+      type: 'theory',
+      xp: 15,
+      theory: `# Boxing
+
+When a value type is stored as \`object\` (or an interface), the runtime **boxes** it: allocates a wrapper on the heap, copies the value in, and stores a reference.
+
+\`\`\`csharp
+int n = 42;
+object boxed = n;        // BOXING — allocates on heap
+int back = (int)boxed;    // UNBOXING — copies back to a value-type variable
+\`\`\`
+
+## Why care?
+
+- **Allocation**: every box is a heap allocation, plus eventual GC work
+- **Indirection**: accessing the value goes through a pointer
+- Hot loops doing implicit boxing can hurt performance significantly
+
+## Where boxing hides
+
+\`\`\`csharp
+ArrayList list = new ArrayList();
+list.Add(1);                // boxed (ArrayList stores object)
+
+object obj = 5;             // boxed
+string s = "x = " + 5;      // 5 is boxed for ToString via object
+
+void Log(object msg) { ... }
+Log(42);                    // boxed
+\`\`\`
+
+## How generics avoid it
+
+\`\`\`csharp
+var list = new List<int>();
+list.Add(1);                // NO boxing — list stores int directly
+\`\`\`
+
+This is one of the main wins of generics: no boxing for value types.
+
+## struct design rule
+
+\`struct\` is a value type. Default it to **immutable + small** (≤ 16 bytes is a common rule of thumb). Mutable structs have a famous footgun:
+
+\`\`\`csharp
+struct Point { public int X, Y; }
+
+var arr = new Point[1];
+arr[0].X = 5;     // works: indexer returns ref to the struct in the array
+
+var list = new List<Point>();
+list.Add(new Point());
+// list[0].X = 5; // COMPILE ERROR: list[0] returns a COPY, can't modify
+\`\`\`
+
+When in doubt: **classes for behavior, structs for tiny value-like data** (Point, Date, Money).`,
+    },
+    {
+      id: 'l-vr-3',
+      title: 'Value vs Reference Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'After `int b = a;`, modifying `b` does what to `a`?',
+          options: [
+            'Both change — they share storage',
+            'a is unchanged — int is a value type, b is a copy',
+            'a becomes 0',
+            'Compiler error',
+          ],
+          correctIndex: 1,
+          explanation: 'Value types are copied on assignment. b has its own storage; changing b doesn\'t affect a.',
+        },
+        {
+          question: 'What is "boxing"?',
+          options: [
+            'Wrapping code in a try/catch',
+            'Converting a value type to object (allocates a heap wrapper)',
+            'Marking a class as sealed',
+            'Compiling AOT',
+          ],
+          correctIndex: 1,
+          explanation: 'Boxing wraps a value type in an object on the heap. Common when storing primitives in `object` collections or via interfaces.',
+        },
+        {
+          question: 'Why do generics like `List<int>` outperform `ArrayList` for value types?',
+          options: [
+            'Generics are AOT-compiled',
+            'They store the values directly without boxing',
+            'They use less code',
+            'They\'re not faster',
+          ],
+          correctIndex: 1,
+          explanation: 'List<int> stores ints inline. ArrayList stores objects, forcing every int to be boxed. Boxing means heap allocation + indirection.',
+        },
+        {
+          question: 'Which is a value type?',
+          options: ['string', 'int[]', 'DateTime', 'List<T>'],
+          correctIndex: 2,
+          explanation: 'DateTime is a struct = value type. Strings, arrays, and List<T> are reference types.',
+        },
+      ],
+    },
+  ],
+};
+
+const chDisposable: Chapter = {
+  id: 'ch-disposable',
+  title: 'IDisposable & using',
+  description: 'Deterministic cleanup of resources',
+  icon: '🧹',
+  lessons: [
+    {
+      id: 'l-disp-1',
+      title: 'Why IDisposable?',
+      type: 'theory',
+      xp: 15,
+      theory: `# IDisposable
+
+The garbage collector handles **memory**, but it can't handle other kinds of resources:
+
+- Open files / sockets / pipes
+- Database connections
+- Locked OS handles
+- Timers
+- Native (P/Invoke) memory
+
+For these, you need **deterministic cleanup**. Enter \`IDisposable\`:
+
+\`\`\`csharp
+public interface IDisposable
+{
+    void Dispose();
+}
+\`\`\`
+
+A class that owns one of those resources implements \`IDisposable\` and frees it in \`Dispose()\`.
+
+## using — the safe consumer pattern
+
+\`\`\`csharp
+using (var reader = new StreamReader("data.txt"))
+{
+    string line = reader.ReadLine();
+    // ...
+}   // reader.Dispose() called automatically here, even on exception
+\`\`\`
+
+\`using\` desugars to a \`try / finally\` that calls \`Dispose\` no matter how the block exits.
+
+## using declaration (C# 8+)
+
+If you want the cleanup at the end of the enclosing block (no extra braces):
+
+\`\`\`csharp
+using var reader = new StreamReader("data.txt");
+string line = reader.ReadLine();
+// reader.Dispose() called when method exits
+\`\`\`
+
+## Implementing IDisposable
+
+Most classes don't need to. Implement it only when **your class directly owns** one of those special resources:
+
+\`\`\`csharp
+class TempFile : IDisposable
+{
+    private readonly string _path;
+    private bool _disposed;
+
+    public TempFile(string content)
+    {
+        _path = Path.GetTempFileName();
+        File.WriteAllText(_path, content);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        File.Delete(_path);
+        _disposed = true;
+        GC.SuppressFinalize(this);
+    }
+}
+\`\`\`
+
+The "called twice" guard (\`_disposed\`) is important — Dispose must be **idempotent**.`,
+    },
+    {
+      id: 'l-disp-2',
+      title: 'Practice: Disposable Logger',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Implement a class `Section` that implements `IDisposable`. The constructor takes a name and prints `"open: name"`. `Dispose` prints `"close: name"`.\n\n`Main()` already creates one inside a `using` block. Expected output:\n```\nopen: phase1\ndoing work\nclose: phase1\n```',
+        starterCode: `using System;
+
+class Program
+{
+    static void Main()
+    {
+        using (var s = new Section("phase1"))
+        {
+            Console.WriteLine("doing work");
+        }
+    }
+}
+
+// Implement Section : IDisposable below
+
+`,
+        solution: `using System;
+
+class Program
+{
+    static void Main()
+    {
+        using (var s = new Section("phase1"))
+        {
+            Console.WriteLine("doing work");
+        }
+    }
+}
+
+class Section : IDisposable
+{
+    private readonly string _name;
+    public Section(string name)
+    {
+        _name = name;
+        Console.WriteLine("open: " + _name);
+    }
+    public void Dispose()
+    {
+        Console.WriteLine("close: " + _name);
+    }
+}`,
+        tests: [{ expectedOutput: 'open: phase1\ndoing work\nclose: phase1', description: 'Open / work / close' }],
+        hints: [
+          'class Section : IDisposable',
+          'Constructor prints "open: " + name',
+          'Dispose() prints "close: " + name',
+        ],
+      },
+    },
+    {
+      id: 'l-disp-3',
+      title: 'IDisposable Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'When does `Dispose()` get called in a `using (var x = ...)` block?',
+          options: [
+            'Only on normal exit',
+            'When `x` goes out of scope at GC time',
+            'When the using block ends — both normal and exception paths',
+            'You have to call it manually',
+          ],
+          correctIndex: 2,
+          explanation: 'The compiler emits a try/finally so Dispose runs on both clean exit and exceptions. That guarantee is the whole point.',
+        },
+        {
+          question: 'Should every class implement IDisposable?',
+          options: [
+            'Yes, just to be safe',
+            'Only when the class directly owns unmanaged or special resources',
+            'Only static classes',
+            'Never — the GC handles everything',
+          ],
+          correctIndex: 1,
+          explanation: 'Most classes only own memory, which the GC handles fine. Implement IDisposable when you own files, sockets, native handles, etc.',
+        },
+        {
+          question: 'What\'s the convention for calling Dispose multiple times?',
+          options: [
+            'It throws InvalidOperationException',
+            'It must be idempotent — safe to call repeatedly',
+            'Only the first call works, the rest do nothing automatically',
+            'It allocates new resources',
+          ],
+          correctIndex: 1,
+          explanation: 'Dispose should be safe to call any number of times. Use a `_disposed` flag to short-circuit subsequent calls.',
+        },
+      ],
+    },
+  ],
+};
+
+const chFileIO: Chapter = {
+  id: 'ch-file-io',
+  title: 'File I/O & Streams',
+  description: 'Read, write, and stream data',
+  icon: '📂',
+  lessons: [
+    {
+      id: 'l-io-1',
+      title: 'The File class',
+      type: 'theory',
+      xp: 15,
+      theory: `# File I/O
+
+\`System.IO.File\` ships static helpers for the common cases. They handle opening, reading, and closing the file for you.
+
+## Read a whole file
+
+\`\`\`csharp
+string text = File.ReadAllText("notes.txt");
+string[] lines = File.ReadAllLines("notes.txt");
+byte[] bytes = File.ReadAllBytes("image.png");
+\`\`\`
+
+## Write a whole file
+
+\`\`\`csharp
+File.WriteAllText("out.txt", "hello\\nworld");
+File.WriteAllLines("out.txt", new[] { "line1", "line2" });
+File.WriteAllBytes("out.bin", bytes);
+File.AppendAllText("log.txt", "another entry\\n");
+\`\`\`
+
+## Existence & deletion
+
+\`\`\`csharp
+bool exists = File.Exists("notes.txt");
+File.Delete("old.tmp");
+File.Move("a.txt", "b.txt");
+File.Copy("a.txt", "backup/a.txt", overwrite: true);
+\`\`\`
+
+## Path manipulation
+
+Always use the \`Path\` class — never concatenate strings:
+
+\`\`\`csharp
+string joined = Path.Combine("data", "users", "alice.json");
+string ext = Path.GetExtension("photo.jpg");          // ".jpg"
+string nameOnly = Path.GetFileNameWithoutExtension("photo.jpg"); // "photo"
+string dir = Path.GetDirectoryName("/tmp/foo/bar.txt");          // "/tmp/foo"
+string tmp = Path.GetTempFileName();                  // unique temp file
+\`\`\`
+
+\`Path.Combine\` handles slashes correctly across platforms.
+
+## Async equivalents
+
+In real apps prefer the async versions to avoid blocking a thread:
+
+\`\`\`csharp
+string text = await File.ReadAllTextAsync("notes.txt");
+await File.WriteAllTextAsync("out.txt", text);
+\`\`\``,
+    },
+    {
+      id: 'l-io-2',
+      title: 'Streams: the lower-level API',
+      type: 'theory',
+      xp: 15,
+      theory: `# Streams
+
+A \`Stream\` is the abstraction over **a sequence of bytes you can read and/or write**. Files are streams; so are network sockets, in-memory buffers, and HTTP request bodies.
+
+## The hierarchy
+
+- \`Stream\` (abstract) → \`FileStream\`, \`NetworkStream\`, \`MemoryStream\`, \`GZipStream\`, ...
+- \`StreamReader\` / \`StreamWriter\` — wrap a stream, give you text I/O (encoding-aware)
+- \`BinaryReader\` / \`BinaryWriter\` — wrap a stream, give you typed binary I/O
+
+## Reading a file line by line
+
+\`\`\`csharp
+using var stream = File.OpenRead("big.txt");
+using var reader = new StreamReader(stream);
+
+string? line;
+while ((line = reader.ReadLine()) != null)
+    Console.WriteLine(line);
+\`\`\`
+
+This is **streaming** — you don't load the whole file into memory. Perfect for huge files.
+
+\`File.ReadAllLines\` loads everything; \`StreamReader\` lets you process line by line.
+
+## Writing
+
+\`\`\`csharp
+using var stream = File.OpenWrite("out.txt");
+using var writer = new StreamWriter(stream);
+writer.WriteLine("hello");
+writer.WriteLine("world");
+\`\`\`
+
+## In-memory streams
+
+Useful for tests, building strings, or inter-process buffers:
+
+\`\`\`csharp
+using var ms = new MemoryStream();
+using var sw = new StreamWriter(ms);
+sw.WriteLine("first");
+sw.Flush();
+
+ms.Position = 0;
+using var sr = new StreamReader(ms);
+string text = sr.ReadToEnd();   // "first"
+\`\`\`
+
+## Buffering
+
+\`Stream\` reads/writes are slow per-call. \`BufferedStream\` (or the readers/writers above) batch them. Always wrap raw streams when doing many small reads/writes.
+
+## A note on this sandbox
+
+The browser playground runs your code in a sealed environment — \`File.ReadAllText\` will throw because there is **no real filesystem**. \`MemoryStream\` works fine. In a local \`dotnet run\`, the File APIs work as documented.`,
+    },
+    {
+      id: 'l-io-3',
+      title: 'Practice: MemoryStream Roundtrip',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Use a `MemoryStream` + `StreamWriter` to write three lines into a buffer, then read them back with a `StreamReader` and print them.\n\nWrite: `"alpha"`, `"beta"`, `"gamma"`\n\nExpected output:\n```\nalpha\nbeta\ngamma\n```',
+        starterCode: `using System;
+using System.IO;
+
+class Program
+{
+    static void Main()
+    {
+        using (var ms = new MemoryStream())
+        {
+            using (var sw = new StreamWriter(ms, System.Text.Encoding.UTF8, 1024, leaveOpen: true))
+            {
+                // Write the three lines
+            }
+
+            ms.Position = 0;
+            using (var sr = new StreamReader(ms))
+            {
+                // Read every line and Console.WriteLine it
+            }
+        }
+    }
+}
+`,
+        solution: `using System;
+using System.IO;
+
+class Program
+{
+    static void Main()
+    {
+        using (var ms = new MemoryStream())
+        {
+            using (var sw = new StreamWriter(ms, System.Text.Encoding.UTF8, 1024, leaveOpen: true))
+            {
+                sw.WriteLine("alpha");
+                sw.WriteLine("beta");
+                sw.WriteLine("gamma");
+            }
+
+            ms.Position = 0;
+            using (var sr = new StreamReader(ms))
+            {
+                string line;
+                while ((line = sr.ReadLine()) != null)
+                    Console.WriteLine(line);
+            }
+        }
+    }
+}`,
+        tests: [{ expectedOutput: 'alpha\nbeta\ngamma', description: 'Three lines roundtrip' }],
+        hints: [
+          'sw.WriteLine adds a newline automatically',
+          '`leaveOpen: true` keeps the underlying MemoryStream alive after the writer disposes',
+          'Reset ms.Position = 0 before reading',
+          'Loop with ReadLine() while it returns non-null',
+        ],
+      },
+    },
+    {
+      id: 'l-io-4',
+      title: 'File I/O Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Why prefer `Path.Combine("a", "b")` over `"a" + "/" + "b"`?',
+          options: [
+            'It\'s shorter',
+            'It handles platform-specific separators and trailing slashes correctly',
+            'Path.Combine is faster',
+            'String concatenation is forbidden in .NET',
+          ],
+          correctIndex: 1,
+          explanation: 'Path.Combine inserts the right separator for the OS and avoids double slashes. Hard-coded "/" breaks on Windows file APIs in some scenarios.',
+        },
+        {
+          question: 'When should you reach for `StreamReader.ReadLine` instead of `File.ReadAllLines`?',
+          options: [
+            'Always',
+            'When the file is small',
+            'When the file is huge and you want to process line-by-line without loading all of it into memory',
+            'Never — they\'re identical',
+          ],
+          correctIndex: 2,
+          explanation: 'ReadAllLines reads the whole file at once. StreamReader streams line-by-line, keeping memory usage flat regardless of file size.',
+        },
+        {
+          question: 'What does `using` in `using var stream = File.OpenRead(...)` do?',
+          options: [
+            'Imports the File namespace',
+            'Disposes the stream when it goes out of scope',
+            'Locks the file',
+            'Marks the variable as readonly',
+          ],
+          correctIndex: 1,
+          explanation: 'using declarations call Dispose at the end of the enclosing scope. Critical for streams to release file handles.',
+        },
+      ],
+    },
+  ],
+};
+
+const chTesting: Chapter = {
+  id: 'ch-testing',
+  title: 'Unit Testing Basics',
+  description: 'xUnit, NUnit, and the AAA pattern',
+  icon: '🧪',
+  lessons: [
+    {
+      id: 'l-test-1',
+      title: 'Why test?',
+      type: 'theory',
+      xp: 15,
+      theory: `# Unit Testing
+
+A **unit test** is a small, fast, automated check that exercises one piece of behavior in your code. Run hundreds of them in seconds, every commit.
+
+Without tests, every change requires you to manually re-verify the whole app. With tests, the suite catches regressions for you while you sleep.
+
+## What makes a good unit test
+
+- **Fast** — milliseconds, not seconds. You should run them on every save.
+- **Isolated** — no real network, no real filesystem (use mocks/in-memory)
+- **Deterministic** — same input → same result, every time. No clocks, no random.
+- **One thing per test** — when it fails, the name tells you what broke.
+
+## The AAA pattern
+
+Every test has three sections:
+
+\`\`\`csharp
+[Fact]
+public void Add_TwoPositives_ReturnsSum()
+{
+    // Arrange — set up the world
+    var calc = new Calculator();
+
+    // Act — invoke the thing under test
+    int result = calc.Add(2, 3);
+
+    // Assert — check the outcome
+    Assert.Equal(5, result);
+}
+\`\`\`
+
+## Naming
+
+The most-readable convention is \`Method_Scenario_ExpectedResult\`:
+- \`Withdraw_AmountExceedsBalance_Throws\`
+- \`Parse_EmptyString_ReturnsZero\`
+- \`Login_WrongPassword_ReturnsFailure\`
+
+When a test name reads like a sentence, the failure message tells you what's wrong without opening the test.
+
+## Coverage isn't quality
+
+100% line coverage with weak assertions is worthless. Better to have 60% coverage that tests **behavior** than 100% that tests **shape**. Cover branches, edge cases (empty, null, boundaries), and the contracts you promise to callers.`,
+    },
+    {
+      id: 'l-test-2',
+      title: 'xUnit, NUnit, MSTest',
+      type: 'theory',
+      xp: 15,
+      theory: `# Test Frameworks
+
+.NET has three big test frameworks. They're all roughly equivalent — most teams pick one and stick with it.
+
+## xUnit (most common in modern .NET)
+
+\`\`\`csharp
+using Xunit;
+
+public class CalcTests
+{
+    [Fact]
+    public void Add_Works()
+    {
+        Assert.Equal(5, 2 + 3);
+    }
+
+    [Theory]
+    [InlineData(1, 2, 3)]
+    [InlineData(10, 0, 10)]
+    [InlineData(-1, 1, 0)]
+    public void Add_Cases(int a, int b, int sum)
+    {
+        Assert.Equal(sum, a + b);
+    }
+}
+\`\`\`
+
+\`[Fact]\` = a single test. \`[Theory]\` + \`[InlineData]\` = a parameterized test, runs once per row.
+
+## NUnit
+
+\`\`\`csharp
+using NUnit.Framework;
+
+[TestFixture]
+public class CalcTests
+{
+    [Test]
+    public void Add_Works() => Assert.That(2 + 3, Is.EqualTo(5));
+
+    [TestCase(1, 2, 3)]
+    [TestCase(10, 0, 10)]
+    public void Add_Cases(int a, int b, int sum) => Assert.That(a + b, Is.EqualTo(sum));
+}
+\`\`\`
+
+## MSTest (Microsoft's, comes pre-installed with VS)
+
+\`\`\`csharp
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+[TestClass]
+public class CalcTests
+{
+    [TestMethod]
+    public void Add_Works() => Assert.AreEqual(5, 2 + 3);
+}
+\`\`\`
+
+## Common assertions
+
+| What | xUnit | NUnit |
+|---|---|---|
+| Equal | \`Assert.Equal(exp, act)\` | \`Assert.That(act, Is.EqualTo(exp))\` |
+| True | \`Assert.True(b)\` | \`Assert.That(b, Is.True)\` |
+| Throws | \`Assert.Throws<X>(...)\` | \`Assert.Throws<X>(...)\` |
+| Collection contains | \`Assert.Contains(...)\` | \`Assert.That(c, Contains.Item(x))\` |
+
+## FluentAssertions (popular addon)
+
+Reads more like English; works with any framework:
+
+\`\`\`csharp
+result.Should().Be(5);
+list.Should().HaveCount(3).And.Contain("apple");
+Action act = () => calc.Divide(1, 0);
+act.Should().Throw<DivideByZeroException>();
+\`\`\`
+
+## How to run
+
+\`\`\`bash
+dotnet test                       # run every test in the solution
+dotnet test --filter Category=Fast
+dotnet watch test                 # rerun on every save
+\`\`\`
+
+In VS Code / Rider, the test runner has gutter icons next to each \`[Fact]\` so you can run/debug a single test.`,
+    },
+    {
+      id: 'l-test-3',
+      title: 'Unit Testing Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What does the AAA pattern stand for?',
+          options: [
+            'Assert / Allocate / Assemble',
+            'Arrange / Act / Assert',
+            'Approve / Apply / Audit',
+            'Async / Await / Assert',
+          ],
+          correctIndex: 1,
+          explanation: 'Arrange the test data, Act on the system under test, Assert about the outcome. Three clear sections per test.',
+        },
+        {
+          question: 'In xUnit, which attribute marks a parameterized test?',
+          options: ['[Fact]', '[Test]', '[Theory]', '[Parameterized]'],
+          correctIndex: 2,
+          explanation: '`[Theory]` + `[InlineData]` rows runs the test once per row. `[Fact]` is for a single non-parameterized test.',
+        },
+        {
+          question: 'A test that hits a real database is...',
+          options: [
+            'A unit test',
+            'An integration test',
+            'A regression test',
+            'A property-based test',
+          ],
+          correctIndex: 1,
+          explanation: 'Unit tests are isolated — no DB, network, or filesystem. Tests that touch real infrastructure are integration tests; they\'re slower and live in a separate project.',
+        },
+        {
+          question: 'Which test name is best?',
+          options: [
+            'TestAdd',
+            'Test1',
+            'Add_TwoPositives_ReturnsSum',
+            'AdditionMethodValidation',
+          ],
+          correctIndex: 2,
+          explanation: 'Method_Scenario_Expected makes the failure message self-explanatory. The first three give no signal when they fail.',
+        },
+      ],
+    },
+  ],
+};
+
 // __END_CHAPTERS__
 
 export const csharpCourse: Course = {
@@ -4621,9 +5562,14 @@ export const csharpCourse: Course = {
     ch10Inheritance,
     chGenerics,
     chDelegates,
+    chNRT,
+    chValueRef,
+    chDisposable,
     ch11Linq,
     chAdvLinq,
     ch12Exceptions,
+    chFileIO,
     ch13Milestone,
+    chTesting,
   ],
 };
