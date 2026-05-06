@@ -88,21 +88,26 @@ remaining-edge-case backlog.
 - **MAX_TRACE_PER_RUN = 1500** — long loops or deep recursion get truncated.
   Bump if it becomes an issue.
 
-## Mono 6.12 sandbox-specific gotchas
+## Sandbox: .NET 9 (since 2026-05-06)
 
-These bit us during the debugger work — keep in mind for future tracer changes:
+DotNetLearn ran on WandBox/mono-6.12 originally; the constraints below
+applied then. The new runner is a self-hosted ASP.NET Core minimal API on
+Railway (`runner-net9-production.up.railway.app`) using the .NET 9 SDK,
+so all the historical mono limitations are gone — records, init setters,
+primary ctors, file-scoped namespaces, switch expressions, type patterns,
+async Main, top-level statements, `using var` declarations, modern
+`System.Text.Json` all compile and run.
 
-- **No async Main.** Bridge with `RunAsync().GetAwaiter().GetResult()`.
-- **No `using var` declaration.** Use `using (var x = ...) { }` blocks.
-- **No type patterns in `switch`.** Use `if (s is X x) ...` chains.
-- **No `record`, `init`, primary ctors, file-scoped namespaces, switch
-  expressions** — all C# 8/9/10+.
-- **No `string?` NRT annotations** — mono treats `string?` as Nullable<string>.
-- **Generics + `is` pattern matching can hit "Invalid IL code"** — the
-  original Mark<T> with type-test patterns crashed mono. Solution: cast to
-  object first then use `is`. See `Format` in TRACER_FOOTER.
-- **Warnings come on stderr.** `useCSharpRunner.ts` distinguishes
-  `severity === 'error'` vs `'warning'` so a CS0169-only build runs.
+The tracer footer is wrapped in `#nullable disable` because it doesn't
+use NRT annotations and would otherwise emit CS8600/CS8604 warnings into
+the user-facing diagnostics list. The historical cast-to-object workaround
+in `Format` (for the mono "Invalid IL code" generic+`is` pattern bug) is
+preserved — it's harmless on .NET 9.
+
+**Historical mono 6.12 gotchas (for reference if we ever need to support
+both backends):** no async Main, no `using var`, no type patterns in
+switch, no records/init/primary ctors/file-scoped namespaces/switch
+expressions, no `string?` NRT, generics+`is` hit "Invalid IL code".
 
 ## What VS Code actually does (for reference)
 
