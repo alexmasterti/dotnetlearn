@@ -1,9 +1,12 @@
-# Build stage: compile the runner ASP.NET service
+# Build stage: compile the runner ASP.NET service.
+# The Railway build context is the REPO ROOT (so this same Dockerfile
+# can be referenced via RAILWAY_DOCKERFILE_PATH=runner/Dockerfile and
+# still find its source under runner/).
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
-COPY Runner.csproj .
+COPY runner/Runner.csproj .
 RUN dotnet restore
-COPY . .
+COPY runner/. .
 RUN dotnet publish -c Release -o /publish --no-restore
 
 # Runtime stage: needs the full SDK so we can build/run user code on demand

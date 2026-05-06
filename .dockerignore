@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.github
+.vscode
+.idea
+.DS_Store
+*.log
+runner/bin
+runner/obj
+.env
+.env.local
+.env.production
