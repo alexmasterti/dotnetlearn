@@ -1,0 +1,16 @@
+{
+  "name": "DotNetLearn",
+  "short_name": "DotNetLearn",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1117",
+  "theme_color": "#7c3aed",
+  "description": "Master C# & .NET - from beginner to advanced engineer",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
