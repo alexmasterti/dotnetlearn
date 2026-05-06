@@ -129,6 +129,44 @@ function expandSingleLineBodies(source: string): { expanded: string; lineMap: nu
   return { expanded: out.join('\n'), lineMap };
 }
 
+/**
+ * Parse a C# parameter list (the substring inside the parens) into the
+ * variable names. `(int a, string b)` → `["a", "b"]`. Strips modifiers
+ * (`ref`, `out`, `in`, `params`, `this`) and default values, and tolerates
+ * generic type args via simple bracket-depth tracking.
+ */
+function parseParamList(s: string): string[] {
+  const trimmed = s.trim();
+  if (!trimmed) return [];
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= s.length; i++) {
+    const ch = s[i];
+    if (ch === '<' || ch === '[') depth++;
+    else if (ch === '>' || ch === ']') depth--;
+    else if (i === s.length || (ch === ',' && depth === 0)) {
+      const piece = s.slice(start, i).trim();
+      if (piece) parts.push(piece);
+      start = i + 1;
+    }
+  }
+  const out: string[] = [];
+  for (const p of parts) {
+    // Strip default value: `int a = 0` → `int a`
+    const noDefault = p.split('=')[0].trim();
+    // The param name is the last identifier in the remaining tokens, after
+    // ignoring leading modifiers. Splitting on whitespace is safe because
+    // generic args were already grouped with bracket-depth above.
+    const tokens = noDefault.split(/\s+/).filter(Boolean);
+    const skip = new Set(['ref', 'out', 'in', 'params', 'this']);
+    while (tokens.length && skip.has(tokens[0])) tokens.shift();
+    const name = tokens[tokens.length - 1] ?? '';
+    if (/^[A-Za-z_]\w*$/.test(name)) out.push(name);
+  }
+  return out;
+}
+
 function maskStringsAndCharsInline(s: string): string {
   let out = '';
   let i = 0;
@@ -162,11 +200,15 @@ export function instrumentCSharp(source: string): string {
   // the opening brace of a method body, popped when depth goes 2→1.
   const methodStack: string[] = [];
   let pendingMethodName: string | null = null;
+  let pendingParams: string[] = [];
   // Stack of per-method locals we've Mark'd at least once. Used to decide
   // whether `foo.Bar()` should trigger a follow-up Mark on `foo` (only if
   // foo is a local we already track — avoids trying to Mark `Console`).
   // Pushed/popped in lockstep with methodStack.
   const trackedStack: Set<string>[] = [];
+  // Mirrors methodStack: each entry is the parameter list captured from the
+  // method's signature so we can Mark each param right after Enter() runs.
+  const paramStack: string[][] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
@@ -187,10 +229,13 @@ export function instrumentCSharp(source: string): string {
 
     // While at class-body depth (1) we look for method signatures.
     if (depth === 1 && pendingMethodName === null) {
-      const sigMatch = code.match(/(?<!\.)\b([A-Za-z_]\w*)\s*\([^)]*\)\s*(?:\{|=>|$)/);
+      const sigMatch = code.match(/(?<!\.)\b([A-Za-z_]\w*)\s*\(([^)]*)\)\s*(?:\{|=>|$)/);
       if (sigMatch) {
         const name = sigMatch[1];
-        if (!KEYWORDS_NOT_METHODS.has(name)) pendingMethodName = name;
+        if (!KEYWORDS_NOT_METHODS.has(name)) {
+          pendingMethodName = name;
+          pendingParams = parseParamList(sigMatch[2]);
+        }
       }
     }
 
@@ -205,13 +250,16 @@ export function instrumentCSharp(source: string): string {
         if (depth === 2 && pendingMethodName) {
           methodStack.push(pendingMethodName);
           trackedStack.push(new Set<string>());
+          paramStack.push(pendingParams);
           pendingMethodName = null;
+          pendingParams = [];
           methodOpenedHere = true;
         }
       } else if (ch === '}') {
         if (depth === 2 && methodStack.length > 0) {
           methodStack.pop();
           trackedStack.pop();
+          paramStack.pop();
           methodClosedHere = true;
         }
         depth = Math.max(0, depth - 1);
@@ -220,6 +268,7 @@ export function instrumentCSharp(source: string): string {
     if (depth === 1 && code.trim().endsWith(';')) {
       // `abstract void Foo();` etc. — drop pending without push.
       pendingMethodName = null;
+      pendingParams = [];
     }
 
     const trimmed = raw.trim();
@@ -294,6 +343,15 @@ export function instrumentCSharp(source: string): string {
     // statement). Well-formed Allman/K&R always has `{` at end-of-line.
     if (methodOpenedHere && /\{\s*$/.test(raw)) {
       out.push(`        __Tracer.Enter(); try {`);
+      // Mark every method parameter so they show up in the variables panel
+      // and respond to hover from the very first frame inside the method.
+      const enteringMethod = methodStack[methodStack.length - 1] ?? '';
+      const enteringParams = paramStack[paramStack.length - 1] ?? [];
+      const enteringTracked = trackedStack[trackedStack.length - 1];
+      for (const p of enteringParams) {
+        out.push(`        __Tracer.Mark(${lineNo}, "${enteringMethod}", "${p}", ${p});`);
+        if (enteringTracked) enteringTracked.add(p);
+      }
     }
   }
 
