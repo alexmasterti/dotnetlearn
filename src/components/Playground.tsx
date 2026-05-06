@@ -157,20 +157,6 @@ export function Playground() {
     }
   };
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        if (e.shiftKey) handleRun(true);
-        else handleRun(false);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, running, loading, breakpoints]);
-
   const handleClearCode = () => {
     if (confirm('Reset playground code to the default snippet?')) {
       setCode(DEFAULT_CODE);
@@ -195,9 +181,33 @@ export function Playground() {
   const inDebugger = frames.length > 0;
   const currentFrame = frameIdx > 0 && frameIdx <= frames.length ? frames[frameIdx - 1] : null;
 
-  const stepOver = useCallback(() => {
+  const stepInto = useCallback(() => {
     setFrameIdx((i) => Math.min(i + 1, frames.length));
   }, [frames.length]);
+
+  const stepOver = useCallback(() => {
+    setFrameIdx((current) => {
+      const cur = frames[current - 1];
+      if (!cur) return Math.min(current + 1, frames.length);
+      // Advance through any frames that are in a DIFFERENT method (means we
+      // entered a callee). Stop on the next frame back in the original method,
+      // or when we run out of frames.
+      let i = current;
+      while (i < frames.length && frames[i].method !== cur.method) i++;
+      return Math.min(i + 1, frames.length);
+    });
+  }, [frames]);
+
+  const stepOut = useCallback(() => {
+    setFrameIdx((current) => {
+      const cur = frames[current - 1];
+      if (!cur) return Math.min(current + 1, frames.length);
+      // Walk forward until we leave the current method.
+      let i = current;
+      while (i < frames.length && frames[i].method === cur.method) i++;
+      return Math.min(i + 1, frames.length);
+    });
+  }, [frames]);
 
   const stepBack = useCallback(() => {
     setFrameIdx((i) => Math.max(i - 1, 0));
@@ -205,11 +215,9 @@ export function Playground() {
 
   const continueRun = useCallback(() => {
     setFrameIdx((current) => {
-      // Advance to the next frame after `current` whose line is in breakpoints.
-      // If none, jump to the end.
       for (let i = current; i < frames.length; i++) {
         if (breakpoints.has(frames[i].line)) {
-          return i + 1; // 1-indexed
+          return i + 1;
         }
       }
       return frames.length;
@@ -232,9 +240,47 @@ export function Playground() {
     setTraceTruncated(false);
   }, []);
 
+  // Keyboard shortcuts (Ctrl+Enter to run, plus VS-Code-style debugger keys)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (e.shiftKey) handleRun(true);
+        else handleRun(false);
+        return;
+      }
+      if (frames.length === 0) return;
+      switch (e.key) {
+        case 'F5':
+          e.preventDefault();
+          if (e.shiftKey) stopDebugger();
+          else if (e.ctrlKey || e.metaKey) restartDebugger();
+          else continueRun();
+          break;
+        case 'F10':
+          e.preventDefault();
+          stepOver();
+          break;
+        case 'F11':
+          e.preventDefault();
+          if (e.shiftKey) stepOut();
+          else stepInto();
+          break;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frames.length, breakpoints, stepOver, stepInto, stepOut, continueRun, restartDebugger, stopDebugger]);
+
   const variablesAtCurrent = currentFrame
     ? Array.from(currentFrame.variables.entries()).map(([name, info]) => ({ name, ...info }))
     : [];
+
+  // Map<name, value> for the editor's hover tooltips. Null when not paused.
+  const hoverVariables = currentFrame
+    ? new Map(Array.from(currentFrame.variables.entries()).map(([n, v]) => [n, v.value]))
+    : null;
 
   const hasError = !!error;
 
@@ -268,6 +314,7 @@ export function Playground() {
           breakpoints={breakpoints}
           onToggleBreakpoint={toggleBreakpoint}
           currentLine={currentFrame?.line ?? null}
+          variables={hoverVariables}
         />
       </div>
 
@@ -315,25 +362,33 @@ export function Playground() {
       {inDebugger && (
         <div className="flex items-center gap-2 mb-3 flex-wrap bg-purple-500/10 border border-purple-500/30 rounded-lg p-2">
           <span className="text-xs text-purple-300 uppercase font-bold mr-2">Debug</span>
-          <DebuggerButton onClick={stepBack} disabled={frameIdx <= 0} title="Step Back (one line earlier)">
+          <DebuggerButton onClick={stepBack} disabled={frameIdx <= 0} title="Step Back (one frame earlier)">
             ⏪ Back
           </DebuggerButton>
-          <DebuggerButton onClick={stepOver} disabled={frameIdx >= frames.length} title="Step Over (next line)">
+          <DebuggerButton onClick={stepOver} disabled={frameIdx >= frames.length} title="Step Over · F10">
             ↷ Step Over
           </DebuggerButton>
-          <DebuggerButton onClick={continueRun} disabled={frameIdx >= frames.length} title="Continue to next breakpoint">
+          <DebuggerButton onClick={stepInto} disabled={frameIdx >= frames.length} title="Step Into · F11">
+            ↓ Step Into
+          </DebuggerButton>
+          <DebuggerButton onClick={stepOut} disabled={frameIdx >= frames.length} title="Step Out · Shift+F11">
+            ↑ Step Out
+          </DebuggerButton>
+          <DebuggerButton onClick={continueRun} disabled={frameIdx >= frames.length} title="Continue · F5">
             ▶ Continue
           </DebuggerButton>
-          <DebuggerButton onClick={restartDebugger} title="Restart at first breakpoint (or first line)">
+          <DebuggerButton onClick={restartDebugger} title="Restart · Ctrl+Shift+F5">
             ⟲ Restart
           </DebuggerButton>
-          <DebuggerButton onClick={stopDebugger} title="Exit debugger" className="text-red-400 hover:text-red-300">
+          <DebuggerButton onClick={stopDebugger} title="Stop · Shift+F5" className="text-red-400 hover:text-red-300">
             ■ Stop
           </DebuggerButton>
           <div className="ml-auto flex items-center gap-3 text-xs">
             {currentFrame ? (
               <span className="text-purple-200">
-                paused after <span className="font-mono font-bold">L{currentFrame.line}</span>
+                in <span className="font-mono font-bold">{currentFrame.method || '?'}</span>
+                <span className="text-purple-400 mx-1">·</span>
+                line <span className="font-mono font-bold">{currentFrame.line}</span>
               </span>
             ) : (
               <span className="text-slate-500">not yet started</span>

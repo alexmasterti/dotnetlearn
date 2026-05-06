@@ -1,14 +1,17 @@
 /**
- * C# tracer: instruments user code so that after running we can replay execution
- * line-by-line. Provides "time-travel debugging" — the program runs once, every
- * line and variable change is captured, the UI lets you step / set breakpoints /
- * continue across the recorded frames.
+ * C# tracer: instruments user code so we can replay execution line-by-line
+ * with VS-style debug controls (Step Over, Step Into, Step Out, Continue).
  *
- * Two kinds of trace markers:
- *   __TRACE__:<step>|<line>|<varName>|<value>     → variable update
- *   __TRACE__:<step>|<line>|@@POS@@|              → "we just finished line N"
+ * Key change vs the per-variable tracer: we emit position markers BEFORE each
+ * executable line (so a "frame at line N" means "paused, about to execute N",
+ * matching VS Code semantics), and we tag every marker with the enclosing
+ * method name so the UI can implement Step Over (skip into-and-back-out of
+ * called methods) and Step Out (advance until the method changes).
  *
- * Position markers anchor frames (one frame = one executed line).
+ * Marker format on stdout:
+ *   __TRACE__:<step>|<line>|<method>|<name>|<value>
+ *
+ * <name> is a special sentinel `@@POS@@` for position markers (no variable).
  */
 
 const TRACE_MARKER = '__TRACE__:';
@@ -27,17 +30,23 @@ const COMPOUND_RE = /^\s*([A-Za-z_]\w*)\s*(?:\+|-|\*|\/|%|&|\||\^)=\s*[^;]+;\s*$
 const ASSIGN_RE = /^\s*([A-Za-z_]\w*)\s*=\s*[^=;][^;]*;\s*$/;
 const INC_DEC_RE = /^\s*(?:\+\+|--)?([A-Za-z_]\w*)(?:\+\+|--)?\s*;\s*$/;
 
+const KEYWORDS_NOT_METHODS = new Set([
+  'if', 'while', 'for', 'foreach', 'switch', 'catch', 'using', 'lock',
+  'fixed', 'do', 'return', 'throw', 'new', 'sizeof', 'typeof', 'nameof',
+  'when', 'select', 'where', 'orderby', 'group', 'join',
+]);
+
 export interface TraceVariable {
   value: string;
   line: number;
   step: number;
 }
 
-/** A single frame in the recorded execution — "paused after line N". */
+/** A single frame in the recorded execution — paused before line N inside method M. */
 export interface TraceFrame {
   step: number;
   line: number;
-  /** Snapshot of every variable known at this frame, keyed by name. */
+  method: string;
   variables: Map<string, TraceVariable>;
 }
 
@@ -52,6 +61,11 @@ export function instrumentCSharp(source: string): string {
   const out: string[] = [];
   let inBlockComment = false;
   let depth = 0;
+  // Stack of method names, deepest = current. While depth>=2 the top of this
+  // stack is "the method we're in". Pushed when depth transitions 1→2 due to
+  // the opening brace of a method body, popped when depth goes 2→1.
+  const methodStack: string[] = [];
+  let pendingMethodName: string | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
@@ -60,55 +74,91 @@ export function instrumentCSharp(source: string): string {
     inBlockComment = stripped.inBlockComment;
     const code = stripped.code;
 
-    for (const ch of code) {
-      if (ch === '{') depth++;
-      else if (ch === '}') depth = Math.max(0, depth - 1);
+    // While at class-body depth (1) we look for method signatures.
+    // Heuristic: the LAST identifier followed by ( ... ) at this depth is the method name.
+    if (depth === 1 && pendingMethodName === null) {
+      const sigMatch = code.match(/(?<!\.)\b([A-Za-z_]\w*)\s*\([^)]*\)\s*(?:\{|=>|$)/);
+      if (sigMatch) {
+        const name = sigMatch[1];
+        if (!KEYWORDS_NOT_METHODS.has(name)) pendingMethodName = name;
+      }
     }
 
+    // Walk characters; track depth and method-stack transitions.
+    let leftMethodOnThisLine = false;
+    for (const ch of code) {
+      if (ch === '{') {
+        depth++;
+        if (depth === 2 && pendingMethodName) {
+          methodStack.push(pendingMethodName);
+          pendingMethodName = null;
+        }
+      } else if (ch === '}') {
+        if (depth === 2 && methodStack.length > 0) {
+          methodStack.pop();
+          leftMethodOnThisLine = true;
+        }
+        depth = Math.max(0, depth - 1);
+      }
+    }
+    if (depth === 1 && code.trim().endsWith(';')) {
+      // `abstract void Foo();` etc. — drop pending without push.
+      pendingMethodName = null;
+    }
+
+    const currentMethod = methodStack[methodStack.length - 1] ?? '';
+    const inMethodBody = depth >= 2 && currentMethod !== '' && !leftMethodOnThisLine;
+
+    const trimmed = raw.trim();
+    const isComment = !trimmed || trimmed.startsWith('//');
+    const isPureBrace = trimmed === '{' || trimmed === '}' || trimmed === '{}';
+    const isForHeader = /^\s*for\s*\(/.test(code);
+    const isControlOnly = /^\s*(?:if|else|while|do|switch|case|default|try|catch|finally)\b/.test(trimmed) && !/;\s*$/.test(trimmed);
+    const alreadyInstrumented = /__Tracer\./.test(raw);
+
+    const shouldInstrument =
+      inMethodBody &&
+      !isComment &&
+      !isPureBrace &&
+      !isForHeader &&
+      !isControlOnly &&
+      !alreadyInstrumented;
+
+    // Emit POS BEFORE the user's line so a "paused frame at L N" means
+    // "about to execute L N" (matches VS Code's stop-on-line semantics).
+    if (shouldInstrument) {
+      out.push(`        __Tracer.Pos(${lineNo}, "${currentMethod}");`);
+    }
     out.push(raw);
 
-    if (depth < 2) continue;
-    if (/__Tracer\./.test(raw)) continue;
-    const trimmed = raw.trim();
-    if (!trimmed || trimmed.startsWith('//')) continue;
-    // Skip for-loop headers (multiple ; in one line); skip pure braces / control words
-    if (/^\s*for\s*\(/.test(code)) continue;
-    if (trimmed === '{' || trimmed === '}' || trimmed === '{}') continue;
-    if (/^\s*(?:if|else|while|do|switch|case|default|return|break|continue|try|catch|finally)\b/.test(trimmed) && !/;\s*$/.test(trimmed)) {
-      // Control-flow header without trailing `;` — don't emit a position here
-      continue;
-    }
-
-    // Variable-update Mark calls (existing behavior)
-    const decl = code.match(TYPE_DECL_RE);
-    if (decl) {
-      out.push(traceCall(lineNo, decl[1]));
-    } else {
-      const compound = code.match(COMPOUND_RE);
-      if (compound) {
-        out.push(traceCall(lineNo, compound[1]));
+    if (shouldInstrument) {
+      const decl = code.match(TYPE_DECL_RE);
+      if (decl) {
+        out.push(traceCall(lineNo, decl[1], currentMethod));
       } else {
-        const assign = code.match(ASSIGN_RE);
-        if (assign && !PRIMITIVE_TYPES.has(assign[1])) {
-          out.push(traceCall(lineNo, assign[1]));
+        const compound = code.match(COMPOUND_RE);
+        if (compound) {
+          out.push(traceCall(lineNo, compound[1], currentMethod));
         } else {
-          const inc = code.match(INC_DEC_RE);
-          if (inc && /\+\+|--/.test(code)) {
-            out.push(traceCall(lineNo, inc[1]));
+          const assign = code.match(ASSIGN_RE);
+          if (assign && !PRIMITIVE_TYPES.has(assign[1])) {
+            out.push(traceCall(lineNo, assign[1], currentMethod));
+          } else {
+            const inc = code.match(INC_DEC_RE);
+            if (inc && /\+\+|--/.test(code)) {
+              out.push(traceCall(lineNo, inc[1], currentMethod));
+            }
           }
         }
       }
     }
-
-    // Always emit a position marker after the line — anchors a frame
-    out.push(`        __Tracer.Pos(${lineNo});`);
   }
 
   return out.join('\n') + '\n' + TRACER_FOOTER;
 }
 
-function traceCall(lineNo: number, varName: string): string {
-  return `        __Tracer.Mark(${lineNo}, "${varName}", ${varName});`;
+function traceCall(lineNo: number, varName: string, method: string): string {
+  return `        __Tracer.Mark(${lineNo}, "${method}", "${varName}", ${varName});`;
 }
 
 const TRACER_FOOTER = `// === auto-injected by DotNetLearn ===
@@ -116,20 +166,20 @@ internal static class __Tracer
 {
     static int _step = 0;
     static int _count = 0;
-    public static T Mark<T>(int line, string name, T value)
+    public static T Mark<T>(int line, string method, string name, T value)
     {
         if (_count >= ${MAX_TRACE_PER_RUN}) return value;
         _count++;
         _step++;
-        System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + name + "|" + Format((object)value));
+        System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|" + name + "|" + Format((object)value));
         return value;
     }
-    public static void Pos(int line)
+    public static void Pos(int line, string method)
     {
         if (_count >= ${MAX_TRACE_PER_RUN}) return;
         _count++;
         _step++;
-        System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|${POS_MARKER}|");
+        System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|${POS_MARKER}|");
     }
     static string Format(object v)
     {
@@ -214,16 +264,19 @@ export function parseTraceOutput(rawStdout: string): ParsedTrace {
     if (ln.startsWith(TRACE_MARKER)) {
       const body = ln.slice(TRACE_MARKER.length);
       const parts = body.split('|');
-      if (parts.length >= 4) {
+      // Format: <step>|<line>|<method>|<name>|<value...>
+      if (parts.length >= 5) {
         const step = parseInt(parts[0], 10);
         const line = parseInt(parts[1], 10);
-        const name = parts[2];
-        const rawValue = parts.slice(3).join('|');
+        const method = parts[2];
+        const name = parts[3];
+        const rawValue = parts.slice(4).join('|');
         if (name === POS_MARKER) {
           frames.push({
             step,
             line,
-            variables: new Map(liveVars), // snapshot
+            method,
+            variables: new Map(liveVars),
           });
         } else {
           liveVars.set(name, { value: rawValue, line, step });

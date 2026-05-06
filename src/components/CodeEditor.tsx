@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { EditorView, keymap, gutter, GutterMarker, Decoration } from '@codemirror/view';
+import { EditorView, keymap, gutter, GutterMarker, Decoration, hoverTooltip } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
 import { EditorState, StateEffect, StateField, RangeSet } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
@@ -16,10 +16,13 @@ interface CodeEditorProps {
   onToggleBreakpoint?: (line: number) => void;
   /** 1-based line number to highlight as the currently paused line, or null. */
   currentLine?: number | null;
+  /**
+   * Variable name → current value, used to populate hover tooltips while
+   * paused in the debugger. Only consulted when `currentLine` is non-null.
+   */
+  variables?: Map<string, string> | null;
 }
 
-// JavaScript/TypeScript mode is the closest sane match for C# syntax highlighting
-// in the browser without pulling a dedicated C# language pack.
 const csharpLang = javascript({ typescript: true });
 
 // === Breakpoint gutter ===
@@ -55,10 +58,7 @@ const currentLineField = StateField.define<DecorationSet>({
     for (const e of tr.effects) {
       if (e.is(setCurrentLine)) line = e.value;
     }
-    if (line === undefined) {
-      // No effect this transaction; just adjust positions through tr.changes
-      return value.map(tr.changes);
-    }
+    if (line === undefined) return value.map(tr.changes);
     if (line === null) return Decoration.none;
     if (line < 1 || line > tr.state.doc.lines) return Decoration.none;
     const lineInfo = tr.state.doc.line(line);
@@ -69,17 +69,63 @@ const currentLineField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
+// === Variables for hover tooltip ===
+
+const setVariables = StateEffect.define<Map<string, string> | null>();
+const variablesField = StateField.define<Map<string, string> | null>({
+  create: () => null,
+  update(value, tr) {
+    let next: Map<string, string> | null | undefined;
+    for (const e of tr.effects) {
+      if (e.is(setVariables)) next = e.value;
+    }
+    return next === undefined ? value : next;
+  },
+});
+
+const wordHover = hoverTooltip((view, pos) => {
+  const vars = view.state.field(variablesField, false);
+  if (!vars || vars.size === 0) return null;
+  const lineObj = view.state.doc.lineAt(pos);
+  const text = lineObj.text;
+  const offset = pos - lineObj.from;
+  const isWord = (ch: string) => /[A-Za-z0-9_]/.test(ch);
+  if (offset < 0 || offset >= text.length || !isWord(text[offset])) return null;
+  let start = offset;
+  let end = offset;
+  while (start > 0 && isWord(text[start - 1])) start--;
+  while (end < text.length && isWord(text[end])) end++;
+  const word = text.slice(start, end);
+  if (!word || /^\d/.test(word)) return null;
+  const value = vars.get(word);
+  if (value === undefined) return null;
+  return {
+    pos: lineObj.from + start,
+    end: lineObj.from + end,
+    above: true,
+    create() {
+      const el = document.createElement('div');
+      el.className = 'cm-var-tooltip';
+      el.innerHTML = `<span class="cm-var-tooltip-name">${word}</span><span class="cm-var-tooltip-eq"> = </span><span class="cm-var-tooltip-val">${escapeHtml(value)}</span>`;
+      return { dom: el };
+    },
+  };
+});
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 export function CodeEditor({
   value,
   onChange,
   breakpoints,
   onToggleBreakpoint,
   currentLine,
+  variables,
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  // Latest onToggle in a ref so the gutter handler reads the current callback
-  // without re-creating the editor on every parent render.
   const onToggleRef = useRef(onToggleBreakpoint);
   useEffect(() => {
     onToggleRef.current = onToggleBreakpoint;
@@ -93,15 +139,15 @@ export function CodeEditor({
       markers: (view) => {
         const bps = view.state.field(breakpointsField);
         if (bps.size === 0) return RangeSet.empty;
-        const ranges = [] as { from: number; to: number; value: BreakpointMarker }[];
         const lineNumbers = Array.from(bps).sort((a, b) => a - b);
+        const ranges = [];
         for (const ln of lineNumbers) {
           if (ln >= 1 && ln <= view.state.doc.lines) {
             const info = view.state.doc.line(ln);
-            ranges.push({ from: info.from, to: info.from, value: breakpointMarker });
+            ranges.push(breakpointMarker.range(info.from));
           }
         }
-        return RangeSet.of(ranges.map((r) => breakpointMarker.range(r.from)));
+        return RangeSet.of(ranges);
       },
       domEventHandlers: {
         mousedown(view, line) {
@@ -121,7 +167,9 @@ export function CodeEditor({
         keymap.of([...defaultKeymap, indentWithTab]),
         breakpointsField,
         currentLineField,
+        variablesField,
         breakpointGutter,
+        wordHover,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             onChange(update.state.doc.toString());
@@ -149,6 +197,19 @@ export function CodeEditor({
             backgroundColor: 'rgba(124, 58, 237, 0.18) !important',
             outline: '1px solid rgba(124, 58, 237, 0.45)',
           },
+          '.cm-tooltip.cm-tooltip-hover': {
+            backgroundColor: '#0f1117',
+            border: '1px solid rgba(124, 58, 237, 0.6)',
+            borderRadius: '6px',
+            padding: '6px 10px',
+            fontSize: '12px',
+            fontFamily: 'monospace',
+            color: '#e5e7eb',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
+          },
+          '.cm-var-tooltip-name': { color: '#6ee7b7' },
+          '.cm-var-tooltip-eq': { color: '#94a3b8' },
+          '.cm-var-tooltip-val': { color: '#e5e7eb' },
         }),
       ],
     });
@@ -159,12 +220,14 @@ export function CodeEditor({
     });
 
     viewRef.current = view;
-    // Seed the field state from props
     if (breakpoints && breakpoints.size > 0) {
       view.dispatch({ effects: setBreakpoints.of(breakpoints) });
     }
     if (currentLine != null) {
       view.dispatch({ effects: setCurrentLine.of(currentLine) });
+    }
+    if (variables) {
+      view.dispatch({ effects: setVariables.of(variables) });
     }
 
     return () => {
@@ -173,7 +236,6 @@ export function CodeEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync external value
   useEffect(() => {
     const view = viewRef.current;
     if (view && view.state.doc.toString() !== value) {
@@ -183,19 +245,23 @@ export function CodeEditor({
     }
   }, [value]);
 
-  // Sync breakpoints
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     view.dispatch({ effects: setBreakpoints.of(breakpoints ?? new Set<number>()) });
   }, [breakpoints]);
 
-  // Sync current line
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     view.dispatch({ effects: setCurrentLine.of(currentLine ?? null) });
   }, [currentLine]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: setVariables.of(variables ?? null) });
+  }, [variables]);
 
   return (
     <div
