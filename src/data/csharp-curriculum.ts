@@ -2295,6 +2295,1224 @@ public class Solution
   ],
 };
 
+const chCli: Chapter = {
+  id: 'ch-cli',
+  title: 'dotnet CLI & Project Types',
+  description: 'How real C# projects are built and run',
+  icon: '🛠️',
+  lessons: [
+    {
+      id: 'l-cli-1',
+      title: 'What is .NET?',
+      type: 'theory',
+      xp: 15,
+      theory: `# What is .NET?
+
+So far you've been writing C# in our browser playground. In the real world, C# code lives inside a **.NET project** built and run with the **dotnet CLI**.
+
+## The pieces
+
+| Piece | What it is |
+|---|---|
+| **C#** | The language you write |
+| **.NET runtime** | The engine that runs your compiled code (the CLR) |
+| **BCL** (Base Class Library) | The huge standard library: \`Console\`, \`List<T>\`, \`HttpClient\`, \`File\`, ... |
+| **SDK** (Software Development Kit) | The tools: compiler, \`dotnet\` CLI, project templates |
+
+## .NET Framework vs modern .NET
+
+You'll see two names in the wild:
+
+- **.NET Framework** (4.x) — Windows-only, legacy. Still alive in old enterprise apps.
+- **.NET** 5 / 6 / 7 / 8 / 9+ — cross-platform (Windows, macOS, Linux), open source, the future. **This is what you should learn.**
+
+Microsoft also used the name *.NET Core* for versions 1.0 - 3.1; in 5.0 they dropped "Core" and unified everything under just *.NET*.
+
+## Versions you'll see
+
+Modern .NET ships a new major version each November. Versions ending in even numbers (6, 8, 10) are **LTS** (Long-Term Support, 3 years). Odd-numbered ones (5, 7, 9) are 18-month "STS" releases.`,
+    },
+    {
+      id: 'l-cli-2',
+      title: 'The dotnet CLI',
+      type: 'theory',
+      xp: 15,
+      theory: `# The \`dotnet\` CLI
+
+Once you install the .NET SDK, you get a \`dotnet\` command. Everything in modern .NET starts with it.
+
+## Most-used commands
+
+\`\`\`bash
+dotnet new console -o MyApp        # create a new console project in MyApp/
+dotnet build                       # compile the current project
+dotnet run                         # build + run
+dotnet test                        # run tests
+dotnet publish -c Release          # produce a deployable build
+dotnet add package Newtonsoft.Json # add a NuGet dependency
+dotnet restore                     # download dependencies (usually automatic)
+dotnet --list-sdks                 # show installed SDK versions
+\`\`\`
+
+## A typical session
+
+\`\`\`bash
+mkdir hello && cd hello
+dotnet new console
+dotnet run
+# Output: Hello, World!
+\`\`\`
+
+That's it. No IDE required.
+
+## SDK vs runtime
+
+- The **SDK** is for developers — it includes everything (compiler + runtime + templates).
+- The **runtime** is for users running your published app — smaller, no compiler.
+
+When you install ".NET SDK 8", the matching runtime comes along.`,
+    },
+    {
+      id: 'l-cli-3',
+      title: 'Project Types & csproj',
+      type: 'theory',
+      xp: 15,
+      theory: `# Project Types
+
+\`dotnet new\` ships a list of templates. The big ones:
+
+| Template | What it builds |
+|---|---|
+| \`console\` | Command-line app |
+| \`classlib\` | Reusable library (DLL) |
+| \`web\` | ASP.NET Core web project (Minimal API) |
+| \`webapi\` | REST API |
+| \`mvc\` | ASP.NET Core MVC |
+| \`razor\` | Razor Pages web app |
+| \`xunit\` / \`nunit\` / \`mstest\` | Unit-test project |
+| \`worker\` | Background-service / hosted-service app |
+| \`maui\` | Cross-platform mobile + desktop |
+
+Run \`dotnet new --list\` to see them all.
+
+## The .csproj file
+
+A C# project is described by a \`.csproj\` file — XML, but **modern .NET makes it tiny**:
+
+\`\`\`xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+</Project>
+\`\`\`
+
+Key parts:
+- \`Sdk="Microsoft.NET.Sdk"\` — pulls in build defaults (auto-includes all \`.cs\` files in the folder)
+- \`<TargetFramework>\` — what runtime version this app needs
+- \`<PackageReference>\` — NuGet packages
+
+## Solution files (.sln)
+
+When you have multiple projects (an app + a library + tests), they're grouped in a **solution** (\`.sln\` file). \`dotnet new sln\` creates one; \`dotnet sln add MyApp.csproj\` registers a project.`,
+    },
+    {
+      id: 'l-cli-4',
+      title: 'CLI & Project Types Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Which command creates a new console application?',
+          options: ['dotnet create console', 'dotnet new console', 'dotnet init', 'dotnet start console'],
+          correctIndex: 1,
+          explanation: '`dotnet new <template>` is the project-creation command. The template name (`console`) chooses what gets scaffolded.',
+        },
+        {
+          question: 'What does the SDK include that the runtime alone does not?',
+          options: ['Only the BCL', 'The CLR', 'The C# compiler and project templates', 'Visual Studio'],
+          correctIndex: 2,
+          explanation: 'The SDK adds developer tools — compiler, CLI templates, build engine. The runtime by itself only runs already-compiled code.',
+        },
+        {
+          question: 'Which is a Long-Term Support (LTS) version of .NET?',
+          options: ['.NET 5', '.NET 7', '.NET 8', '.NET 9'],
+          correctIndex: 2,
+          explanation: 'Even-numbered modern .NET releases are LTS (supported for 3 years). 5, 7, 9 are STS (18 months). 8 and 10 are LTS.',
+        },
+        {
+          question: 'In a modern .csproj, where do NuGet dependencies live?',
+          options: ['<PackageReference> inside an <ItemGroup>', '<Reference> tags at the root', 'A separate packages.config file', 'In the .sln file'],
+          correctIndex: 0,
+          explanation: 'SDK-style csproj uses `<PackageReference>` items. The legacy `packages.config` file is from .NET Framework only.',
+        },
+      ],
+    },
+  ],
+};
+
+const chCasting: Chapter = {
+  id: 'ch-casting',
+  title: 'Type Conversion & Casting',
+  description: 'Move values between types safely',
+  icon: '🔄',
+  lessons: [
+    {
+      id: 'l-cast-1',
+      title: 'Implicit vs Explicit Conversion',
+      type: 'theory',
+      xp: 15,
+      theory: `# Type Conversion
+
+C# is strict about types — you can't just hand a \`string\` to an \`int\`. But the language gives you several ways to **convert** between them.
+
+## Implicit (automatic, no syntax needed)
+
+When the conversion is **safe** (no information lost), C# does it for you:
+
+\`\`\`csharp
+int small = 42;
+long big = small;        // int → long: always fits, implicit
+double d = small;        // int → double: implicit
+\`\`\`
+
+## Explicit cast \`(Type)value\`
+
+When the conversion **might lose information**, you must opt in:
+
+\`\`\`csharp
+double d = 3.7;
+int i = (int)d;          // truncates to 3 (NOT rounded)
+
+long big = 999_999_999_999L;
+int small = (int)big;    // overflow! produces garbage silently
+\`\`\`
+
+## checked / unchecked
+
+By default integer overflow wraps silently. Wrap a cast in \`checked\` to throw on overflow:
+
+\`\`\`csharp
+checked
+{
+    int small = (int)big;  // throws OverflowException
+}
+\`\`\`
+
+## Convert class & TryParse
+
+For string ↔ number conversions use \`int.Parse\`, \`int.TryParse\`, or \`Convert.ToInt32\`:
+
+\`\`\`csharp
+int n = int.Parse("42");           // throws on bad input
+bool ok = int.TryParse("42", out int x); // safe — returns false on bad input
+
+int rounded = Convert.ToInt32(3.7); // rounds (4) instead of truncating
+\`\`\``,
+    },
+    {
+      id: 'l-cast-2',
+      title: 'Practice: Convert User Input',
+      type: 'code',
+      xp: 25,
+      codeExercise: {
+        instructions: 'You\'re given the string `"42.7"`. Convert it to a `double` and to an `int` (truncated), and print each on its own line.\n\nExpected output:\n```\n42.7\n42\n```',
+        starterCode: `using System;
+using System.Globalization;
+
+class Program
+{
+    static void Main()
+    {
+        string raw = "42.7";
+        // Convert to double, then truncate to int
+
+    }
+}
+`,
+        solution: `using System;
+using System.Globalization;
+
+class Program
+{
+    static void Main()
+    {
+        string raw = "42.7";
+        double d = double.Parse(raw, CultureInfo.InvariantCulture);
+        int i = (int)d;
+        Console.WriteLine(d);
+        Console.WriteLine(i);
+    }
+}`,
+        tests: [{ expectedOutput: '42.7\n42', description: 'Parse to double then truncate to int' }],
+        hints: [
+          'Use double.Parse(raw, CultureInfo.InvariantCulture) so the dot is treated as a decimal separator',
+          'To truncate a double to int use the explicit cast (int)d',
+        ],
+      },
+    },
+    {
+      id: 'l-cast-3',
+      title: 'Casting Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What is the value of `(int)3.9`?',
+          options: ['3', '4', '3.9', 'Compile error'],
+          correctIndex: 0,
+          explanation: 'Casting a double to int truncates toward zero — the .9 is dropped. Use Convert.ToInt32 or Math.Round if you want rounding.',
+        },
+        {
+          question: 'Which is the SAFE way to parse a possibly-bad string?',
+          options: ['int.Parse(s)', 'int.TryParse(s, out var n)', '(int)s', 'Convert.ToInt32(s)'],
+          correctIndex: 1,
+          explanation: 'TryParse returns a bool indicating success and writes the value into an out parameter — it never throws. The others throw FormatException on bad input.',
+        },
+        {
+          question: 'What happens with `(int)long.MaxValue` by default?',
+          options: ['Throws OverflowException', 'Compile error', 'Wraps silently to a garbage value', 'Returns int.MaxValue'],
+          correctIndex: 2,
+          explanation: 'By default, integer overflow wraps silently. Wrap the cast in `checked { ... }` to throw on overflow instead.',
+        },
+      ],
+    },
+  ],
+};
+
+const chMethodParams: Chapter = {
+  id: 'ch-method-params',
+  title: 'Method Parameters Deep Dive',
+  description: 'ref, out, in, and params',
+  icon: '🎯',
+  lessons: [
+    {
+      id: 'l-mp-1',
+      title: 'ref, out, in, params',
+      type: 'theory',
+      xp: 15,
+      theory: `# Parameter Modifiers
+
+By default, parameters are passed **by value** — the method gets a *copy*. Modifiers change that.
+
+## \`ref\` — pass by reference
+
+The method can read **and modify** the caller's variable:
+
+\`\`\`csharp
+static void Double(ref int n) { n *= 2; }
+
+int x = 5;
+Double(ref x);
+Console.WriteLine(x); // 10
+\`\`\`
+
+The variable must be **initialized before** you pass it.
+
+## \`out\` — return extra values
+
+Like \`ref\`, but the variable does **not** need to be initialized first; the method **must** assign it:
+
+\`\`\`csharp
+static bool TryDivide(int a, int b, out int result)
+{
+    if (b == 0) { result = 0; return false; }
+    result = a / b;
+    return true;
+}
+
+if (TryDivide(10, 2, out int q))
+    Console.WriteLine(q); // 5
+\`\`\`
+
+C# 7+ lets you declare the variable inline: \`out int q\`.
+
+## \`in\` — read-only by reference
+
+Same as \`ref\` but the method can't modify it. Useful for big \`struct\`s where you want pass-by-reference performance without giving up immutability:
+
+\`\`\`csharp
+static double Magnitude(in Vector3 v) { ... }
+\`\`\`
+
+## \`params\` — variable-length argument list
+
+Lets the method accept any number of args of one type:
+
+\`\`\`csharp
+static int Sum(params int[] nums)
+{
+    int total = 0;
+    foreach (var n in nums) total += n;
+    return total;
+}
+
+Sum();              // 0
+Sum(1, 2, 3);       // 6
+Sum(new int[]{1,2});// 3 (you can also pass an actual array)
+\`\`\`
+
+\`params\` must be the **last** parameter.`,
+    },
+    {
+      id: 'l-mp-2',
+      title: 'Practice: Use out',
+      type: 'code',
+      xp: 25,
+      codeExercise: {
+        instructions: 'The method `TryDivide(int a, int b, out int result)` is given. Use it to divide 100 by 7 and print the result. If the divisor were 0 you should print "cannot divide" instead.\n\nThe call already passes 100, 7. Just print the result.\n\nExpected output:\n```\n14\n```',
+        starterCode: `using System;
+
+class Program
+{
+    static bool TryDivide(int a, int b, out int result)
+    {
+        if (b == 0) { result = 0; return false; }
+        result = a / b;
+        return true;
+    }
+
+    static void Main()
+    {
+        // Call TryDivide(100, 7, out var q) and print accordingly
+
+    }
+}
+`,
+        solution: `using System;
+
+class Program
+{
+    static bool TryDivide(int a, int b, out int result)
+    {
+        if (b == 0) { result = 0; return false; }
+        result = a / b;
+        return true;
+    }
+
+    static void Main()
+    {
+        if (TryDivide(100, 7, out int q))
+            Console.WriteLine(q);
+        else
+            Console.WriteLine("cannot divide");
+    }
+}`,
+        tests: [{ expectedOutput: '14', description: '100 / 7 = 14' }],
+        hints: [
+          'Use `out int q` inline to declare the variable in the call',
+          'Wrap the call in an if to branch on success',
+        ],
+      },
+    },
+    {
+      id: 'l-mp-3',
+      title: 'Variadic Sum Challenge',
+      type: 'challenge',
+      xp: 35,
+      challenge: {
+        description: 'Implement `int SumAll(int[] nums)` — return the sum of every value in the array.\n\nIn idiomatic C# you would write this with a `params int[]` parameter so callers could write `SumAll(1, 2, 3)`. For testing convenience the harness passes an `int[]` directly.\n\nReturn 0 for an empty array.',
+        difficulty: 'easy',
+        examples: [
+          { input: '[1, 2, 3]', output: '6' },
+          { input: '[]', output: '0' },
+          { input: '[10]', output: '10' },
+        ],
+        functionName: 'SumAll',
+        starterCode: `using System;
+
+public class Solution
+{
+    public int SumAll(int[] nums)
+    {
+        // your code here
+        return 0;
+    }
+}`,
+        solution: `using System;
+
+public class Solution
+{
+    public int SumAll(int[] nums)
+    {
+        int total = 0;
+        foreach (var n in nums) total += n;
+        return total;
+    }
+}`,
+        testCases: [
+          { input: '[1, 2, 3]', expected: '6', description: 'Three positives' },
+          { input: '[]', expected: '0', description: 'Empty' },
+          { input: '[10]', expected: '10', description: 'Single' },
+          { input: '[-1, 1, -1, 1]', expected: '0', description: 'Cancelling negatives' },
+          { input: '[100, 200, 300, 400, 500]', expected: '1500', description: 'Five values' },
+        ],
+        hints: [
+          'Use foreach to walk the array',
+          'Or use LINQ: `nums.Sum()` (after `using System.Linq;`)',
+        ],
+      },
+    },
+    {
+      id: 'l-mp-4',
+      title: 'Method Parameters Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What\'s the difference between `ref` and `out`?',
+          options: [
+            'No difference, they\'re aliases',
+            'ref needs the variable initialized before; out requires the method to assign it',
+            'out is read-only inside the method',
+            'ref can only be used with structs',
+          ],
+          correctIndex: 1,
+          explanation: 'With ref you must initialize before; the method may read or write. With out you don\'t need to initialize, but the method must assign before it returns.',
+        },
+        {
+          question: 'Which modifier passes a struct by reference but forbids modification?',
+          options: ['ref', 'out', 'in', 'const'],
+          correctIndex: 2,
+          explanation: '`in` is read-only by-reference. Useful for performance with big structs without sacrificing immutability.',
+        },
+        {
+          question: 'Where must `params` appear in the parameter list?',
+          options: ['First', 'Anywhere', 'Last', 'It can\'t coexist with other params'],
+          correctIndex: 2,
+          explanation: 'A method can have only one params, and it must be the last parameter — otherwise the compiler couldn\'t tell where the variadic args start.',
+        },
+      ],
+    },
+  ],
+};
+
+const chConsoleIO: Chapter = {
+  id: 'ch-console-io',
+  title: 'Console I/O Beyond WriteLine',
+  description: 'Formatting, alignment, and the limits of stdin',
+  icon: '🖨️',
+  lessons: [
+    {
+      id: 'l-cio-1',
+      title: 'Write vs WriteLine vs Format',
+      type: 'theory',
+      xp: 15,
+      theory: `# Console output, deeper
+
+You already know \`Console.WriteLine\`. Three more useful members:
+
+## \`Console.Write\` — no newline
+
+\`\`\`csharp
+Console.Write("Hi");
+Console.Write(" there");      // -> Hi there
+Console.WriteLine("!");       // -> Hi there!
+\`\`\`
+
+## Composite formatting with \`{0}\`, \`{1}\`...
+
+\`\`\`csharp
+string name = "Alice";
+int age = 28;
+Console.WriteLine("Hello, {0}! You are {1}.", name, age);
+\`\`\`
+
+This is the older sibling of string interpolation (\`$"..."\`). They produce identical output. Interpolation reads better; composite is occasionally useful for templates.
+
+## Alignment & format specifiers
+
+\`\`\`csharp
+Console.WriteLine("{0,-10} {1,5}", "Item", "Qty");
+Console.WriteLine("{0,-10} {1,5}", "Apples", 3);
+Console.WriteLine("{0,-10} {1,5}", "Pears", 12);
+// Item            Qty
+// Apples            3
+// Pears            12
+\`\`\`
+
+- \`{0,-10}\` — pad value 0 to width 10, **left-aligned** (negative)
+- \`{1,5}\` — pad value 1 to width 5, **right-aligned** (positive)
+
+Format specifiers control representation:
+
+\`\`\`csharp
+Console.WriteLine("{0:F2}", Math.PI);    // 3.14    (fixed, 2 decimals)
+Console.WriteLine("{0:N0}", 1234567);    // 1,234,567
+Console.WriteLine("{0:X}", 255);         // FF
+Console.WriteLine("{0:P1}", 0.275);      // 27.5 %
+\`\`\`
+
+Same specifiers work in interpolation: \`$"{Math.PI:F2}"\`.
+
+## A note on stdin
+
+In our browser playground there's no real keyboard — \`Console.ReadLine()\` returns \`null\`. In a local console app it would block waiting for the user to type and press Enter:
+
+\`\`\`csharp
+Console.Write("Your name: ");
+string? name = Console.ReadLine();
+\`\`\`
+
+When you run programs locally with \`dotnet run\`, this works.`,
+    },
+    {
+      id: 'l-cio-2',
+      title: 'Practice: Formatted Table',
+      type: 'code',
+      xp: 25,
+      codeExercise: {
+        instructions: 'Print a small table using composite formatting. Use width 10 left-aligned for the label and width 5 right-aligned for the number, separated by a literal `|`.\n\nFormat string: `"{0,-10}|{1,5}"`\n\nExpected output:\n```\nApples    |    3\nPears     |   12\nGrapes    |  125\n```',
+        starterCode: `using System;
+
+class Program
+{
+    static void Main()
+    {
+        // Use Console.WriteLine("{0,-10}|{1,5}", label, number);
+
+    }
+}
+`,
+        solution: `using System;
+
+class Program
+{
+    static void Main()
+    {
+        Console.WriteLine("{0,-10}|{1,5}", "Apples", 3);
+        Console.WriteLine("{0,-10}|{1,5}", "Pears", 12);
+        Console.WriteLine("{0,-10}|{1,5}", "Grapes", 125);
+    }
+}`,
+        tests: [
+          {
+            expectedOutput: 'Apples    |    3\nPears     |   12\nGrapes    |  125',
+            description: 'Aligned table with pipe separator',
+          },
+        ],
+        hints: [
+          'The format string is "{0,-10}|{1,5}" — the comma plus number is the alignment width',
+          'Negative width means left-align; positive means right-align',
+        ],
+      },
+    },
+    {
+      id: 'l-cio-3',
+      title: 'Console I/O Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What\'s the difference between Console.Write and Console.WriteLine?',
+          options: [
+            'WriteLine is faster',
+            'WriteLine adds a newline at the end; Write does not',
+            'Write is for numbers, WriteLine for strings',
+            'There is no difference',
+          ],
+          correctIndex: 1,
+          explanation: 'WriteLine appends Environment.NewLine. Write outputs exactly what you give it.',
+        },
+        {
+          question: 'In `{0,-8:F2}`, what does the `-8` mean?',
+          options: [
+            'Negative number prefix',
+            'Right-align in 8 characters',
+            'Left-align in 8 characters',
+            'Truncate to 8 characters',
+          ],
+          correctIndex: 2,
+          explanation: 'Comma + number is the alignment width. Negative = left-align; positive = right-align. The `:F2` after is the format specifier (fixed-point, 2 decimals).',
+        },
+        {
+          question: 'In our browser playground, what does Console.ReadLine() return?',
+          options: ['Whatever the user types', 'An empty string', 'null (no stdin)', 'It blocks forever'],
+          correctIndex: 2,
+          explanation: 'There\'s no keyboard attached to the sandbox process, so the input stream is closed and ReadLine returns null. In a local terminal it would block waiting for input.',
+        },
+      ],
+    },
+  ],
+};
+
+const chStringsAdv: Chapter = {
+  id: 'ch-strings-adv',
+  title: 'Strings Advanced',
+  description: 'StringBuilder, formatting, parsing',
+  icon: '🧵',
+  lessons: [
+    {
+      id: 'l-sa-1',
+      title: 'Why Strings Are Immutable',
+      type: 'theory',
+      xp: 15,
+      theory: `# Strings are immutable
+
+In C#, every \`string\` is **immutable** — once created, its bytes never change. Methods like \`Replace\` or \`ToUpper\` return *new* strings.
+
+\`\`\`csharp
+string a = "hello";
+a.ToUpper();          // returns "HELLO" but you discarded it
+Console.WriteLine(a); // still "hello"
+
+string b = a.ToUpper();
+Console.WriteLine(b); // "HELLO"
+\`\`\`
+
+## Why this matters: hidden allocations
+
+Concatenating in a loop with \`+\` is **slow** and wasteful:
+
+\`\`\`csharp
+string s = "";
+for (int i = 0; i < 1000; i++)
+    s += i;          // creates a NEW string each time, throws away the old one
+\`\`\`
+
+That's 1000 allocations and 1000 garbage strings.
+
+## StringBuilder — mutable buffer
+
+For loops, use \`System.Text.StringBuilder\`:
+
+\`\`\`csharp
+using System.Text;
+
+var sb = new StringBuilder();
+for (int i = 0; i < 1000; i++)
+    sb.Append(i);
+
+string final = sb.ToString();
+\`\`\`
+
+One buffer, one final string. Orders of magnitude faster for big loops.
+
+## When to NOT bother
+
+For just a handful of concatenations, \`+\` or \`$"..."\` is fine — the JIT and the BCL optimize them. Reach for StringBuilder when you have a **loop** or **dynamic count**.`,
+    },
+    {
+      id: 'l-sa-2',
+      title: 'Practice: Build a CSV Line',
+      type: 'code',
+      xp: 25,
+      codeExercise: {
+        instructions: 'Use a `StringBuilder` to build a comma-separated string of the numbers 1 through 5. Print the result.\n\nExpected output:\n```\n1,2,3,4,5\n```',
+        starterCode: `using System;
+using System.Text;
+
+class Program
+{
+    static void Main()
+    {
+        var sb = new StringBuilder();
+        // Append 1..5, separated by commas, no trailing comma
+
+        Console.WriteLine(sb.ToString());
+    }
+}
+`,
+        solution: `using System;
+using System.Text;
+
+class Program
+{
+    static void Main()
+    {
+        var sb = new StringBuilder();
+        for (int i = 1; i <= 5; i++)
+        {
+            if (i > 1) sb.Append(',');
+            sb.Append(i);
+        }
+        Console.WriteLine(sb.ToString());
+    }
+}`,
+        tests: [{ expectedOutput: '1,2,3,4,5', description: 'Comma-separated 1..5' }],
+        hints: [
+          'Append the comma BEFORE the number when i > 1, so there\'s no leading or trailing comma',
+          'Or: append number then comma in the loop, then call sb.Length-- at the end to drop the last char',
+        ],
+      },
+    },
+    {
+      id: 'l-sa-3',
+      title: 'CSV Parsing Challenge',
+      type: 'challenge',
+      xp: 45,
+      challenge: {
+        description: 'Parse a comma-separated string into an array of trimmed values.\n\nFor example, the input `" apple , banana , cherry "` should return `["apple", "banana", "cherry"]`.\n\nReturn an empty array for an empty string.',
+        difficulty: 'easy',
+        examples: [
+          { input: '"apple,banana,cherry"', output: '["apple", "banana", "cherry"]' },
+          { input: '" a , b , c "', output: '["a", "b", "c"]', explanation: 'Whitespace around each value is trimmed.' },
+          { input: '""', output: '[]' },
+        ],
+        functionName: 'ParseCsv',
+        starterCode: `using System;
+
+public class Solution
+{
+    public string[] ParseCsv(string input)
+    {
+        // your code here
+        return new string[0];
+    }
+}`,
+        solution: `using System;
+
+public class Solution
+{
+    public string[] ParseCsv(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return new string[0];
+        var parts = input.Split(',');
+        for (int i = 0; i < parts.Length; i++) parts[i] = parts[i].Trim();
+        return parts;
+    }
+}`,
+        testCases: [
+          { input: '"apple,banana,cherry"', expected: '["apple", "banana", "cherry"]', description: 'Three plain values' },
+          { input: '" a , b , c "', expected: '["a", "b", "c"]', description: 'With whitespace' },
+          { input: '""', expected: '[]', description: 'Empty string' },
+          { input: '"single"', expected: '["single"]', description: 'No commas' },
+          { input: '"a,b"', expected: '["a", "b"]', description: 'Two values' },
+        ],
+        hints: [
+          'Use string.Split(\',\')',
+          'Walk the array and call .Trim() on each entry to drop surrounding whitespace',
+          'Handle the empty-string case explicitly — Split would return [""]',
+        ],
+      },
+    },
+    {
+      id: 'l-sa-4',
+      title: 'Strings Advanced Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'When does StringBuilder beat regular string concatenation?',
+          options: [
+            'For any concatenation',
+            'In loops or when the count is unknown',
+            'Only for numbers',
+            'Never — `+` is always faster',
+          ],
+          correctIndex: 1,
+          explanation: 'StringBuilder shines in loops and dynamic-count scenarios. For a few concats the regular `+` or `$"..."` is fine and clearer.',
+        },
+        {
+          question: '`"hello".Replace("l", "L")` — what happens to the original `"hello"`?',
+          options: [
+            'It changes to "heLLo"',
+            'Nothing — strings are immutable, Replace returns a new string',
+            'The compiler errors',
+            'It depends on .NET version',
+          ],
+          correctIndex: 1,
+          explanation: 'C# strings are immutable. All "modifying" methods return new strings; the original is unchanged.',
+        },
+        {
+          question: 'What namespace lives `StringBuilder` in?',
+          options: ['System', 'System.Text', 'System.Strings', 'System.IO'],
+          correctIndex: 1,
+          explanation: '`using System.Text;` brings in StringBuilder.',
+        },
+      ],
+    },
+  ],
+};
+
+const chAccess: Chapter = {
+  id: 'ch-access',
+  title: 'Access Modifiers & Namespaces',
+  description: 'Visibility and code organization',
+  icon: '🔒',
+  lessons: [
+    {
+      id: 'l-am-1',
+      title: 'Access Modifiers',
+      type: 'theory',
+      xp: 15,
+      theory: `# Access Modifiers
+
+Modifiers control **who can see / use** a type or member.
+
+| Modifier | Visible from |
+|---|---|
+| \`public\` | Anywhere |
+| \`private\` | Same class only |
+| \`protected\` | Same class and **subclasses** |
+| \`internal\` | Same **assembly** (DLL/EXE) only |
+| \`protected internal\` | Same assembly OR subclasses |
+| \`private protected\` | Subclasses **within** the same assembly |
+
+## Defaults (memorize these!)
+
+- Top-level **types** default to \`internal\`
+- Class **members** default to \`private\`
+
+\`\`\`csharp
+class Foo            // implicitly internal
+{
+    int x;           // implicitly private
+}
+\`\`\`
+
+Most code says it explicitly because the defaults often surprise newcomers.
+
+## Encapsulation in practice
+
+\`\`\`csharp
+public class Counter
+{
+    private int _count;            // hidden state
+    public int Count => _count;    // read-only public view
+    public void Increment() => _count++;
+}
+
+var c = new Counter();
+c.Increment();
+Console.WriteLine(c.Count);  // 1
+// c._count = 99;            // compile error: private
+\`\`\`
+
+The private field is the implementation; the public method/property is the contract.
+
+## Convention: \`_camelCase\` for private fields
+
+Most C# codebases prefix private fields with an underscore so they don't shadow public properties of similar name.`,
+    },
+    {
+      id: 'l-am-2',
+      title: 'Namespaces & using',
+      type: 'theory',
+      xp: 15,
+      theory: `# Namespaces
+
+A **namespace** groups related types and prevents name clashes. The BCL is split across namespaces like \`System\`, \`System.Collections.Generic\`, \`System.IO\`, etc.
+
+## Declaring
+
+\`\`\`csharp
+namespace MyApp.Domain
+{
+    public class Order { }
+}
+\`\`\`
+
+Or with **file-scoped** syntax (C# 10+ — concise, less indentation):
+
+\`\`\`csharp
+namespace MyApp.Domain;
+
+public class Order { }
+\`\`\`
+
+## using directives
+
+\`using\` brings names from a namespace into scope so you don't have to fully qualify them:
+
+\`\`\`csharp
+// Without using:
+System.Collections.Generic.List<int> nums = new System.Collections.Generic.List<int>();
+
+// With:
+using System.Collections.Generic;
+List<int> nums = new List<int>();
+\`\`\`
+
+## Aliases
+
+Resolve clashes by giving a type a local nickname:
+
+\`\`\`csharp
+using ConsoleColor = System.ConsoleColor;
+using Project = System.IO.Path;   // silly but legal
+\`\`\`
+
+## Global usings (modern .NET)
+
+In a \`.csproj\` you can mark a using as global so it applies to **every** \`.cs\` file in the project:
+
+\`\`\`xml
+<ItemGroup>
+  <Using Include="System.Linq" />
+</ItemGroup>
+\`\`\`
+
+The SDK already imports common ones (\`System\`, \`System.Linq\`, etc.) under \`<ImplicitUsings>enable</ImplicitUsings>\`.`,
+    },
+    {
+      id: 'l-am-3',
+      title: 'Access & Namespaces Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What is the default access modifier for a top-level class?',
+          options: ['public', 'private', 'internal', 'protected'],
+          correctIndex: 2,
+          explanation: 'Top-level types default to internal — visible only inside the same assembly. Members default to private.',
+        },
+        {
+          question: 'Which modifier lets a subclass see a member but hides it from unrelated classes?',
+          options: ['private', 'protected', 'internal', 'public'],
+          correctIndex: 1,
+          explanation: '`protected` is for inheritance. `private` would hide it even from subclasses.',
+        },
+        {
+          question: '`using System.Linq;` does what?',
+          options: [
+            'Loads the LINQ library at runtime',
+            'Brings types and extension methods from `System.Linq` into scope',
+            'Locks the LINQ namespace from being modified',
+            'Makes the file private',
+          ],
+          correctIndex: 1,
+          explanation: '`using` is purely a compile-time alias. Library loading happens via assembly references, which the SDK handles separately.',
+        },
+        {
+          question: 'In C# 10+, what does the file-scoped namespace look like?',
+          options: [
+            '`namespace MyApp;`',
+            '`namespace MyApp { ... }`',
+            '`package MyApp;`',
+            '`module MyApp;`',
+          ],
+          correctIndex: 0,
+          explanation: 'File-scoped namespaces use a semicolon after the name and remove a level of indentation. The block-style is still valid.',
+        },
+      ],
+    },
+  ],
+};
+
+const chEnums: Chapter = {
+  id: 'ch-enums',
+  title: 'Enums & [Flags]',
+  description: 'Named constants and bit fields',
+  icon: '🎚️',
+  lessons: [
+    {
+      id: 'l-en-1',
+      title: 'Enums Basics',
+      type: 'theory',
+      xp: 15,
+      theory: `# Enums
+
+An \`enum\` declares a set of **named integer constants**:
+
+\`\`\`csharp
+enum Day { Sun, Mon, Tue, Wed, Thu, Fri, Sat }
+
+Day d = Day.Wed;
+Console.WriteLine(d);          // "Wed"
+Console.WriteLine((int)d);     // 3
+\`\`\`
+
+Values default to 0, 1, 2... You can override:
+
+\`\`\`csharp
+enum Status
+{
+    Pending = 1,
+    Approved = 2,
+    Rejected = 4,
+    Archived = 100
+}
+\`\`\`
+
+## Casting
+
+Enums are explicitly convertible to/from their underlying integer type:
+
+\`\`\`csharp
+int n = (int)Status.Approved;        // 2
+Status s = (Status)2;                // Status.Approved
+Status weird = (Status)999;          // legal! produces undefined enum value
+\`\`\`
+
+The last case shows an enum gotcha: any int casts cleanly even if it's not a defined value. Validate at boundaries with \`Enum.IsDefined\`:
+
+\`\`\`csharp
+if (!Enum.IsDefined(typeof(Status), n))
+    throw new ArgumentException("bad status");
+\`\`\`
+
+## Switch on enums
+
+\`\`\`csharp
+switch (s)
+{
+    case Status.Pending:  Console.WriteLine("waiting"); break;
+    case Status.Approved: Console.WriteLine("good");    break;
+    default:              Console.WriteLine("other");   break;
+}
+\`\`\`
+
+## Underlying type
+
+Enums default to \`int\`. You can pick a different integer type:
+
+\`\`\`csharp
+enum SmallStatus : byte { A, B, C }   // each value fits in 1 byte
+\`\`\``,
+    },
+    {
+      id: 'l-en-2',
+      title: 'Practice: Use an Enum',
+      type: 'code',
+      xp: 25,
+      codeExercise: {
+        instructions: 'Define an enum `TrafficLight` with values `Red`, `Yellow`, `Green`. In `Main`, set a variable to `TrafficLight.Yellow` and use a `switch` to print:\n- `STOP` for Red\n- `SLOW` for Yellow\n- `GO` for Green\n\nExpected output:\n```\nSLOW\n```',
+        starterCode: `using System;
+
+class Program
+{
+    // Define the TrafficLight enum here
+
+    static void Main()
+    {
+        TrafficLight light = TrafficLight.Yellow;
+        // switch on light and print accordingly
+
+    }
+}
+`,
+        solution: `using System;
+
+class Program
+{
+    enum TrafficLight { Red, Yellow, Green }
+
+    static void Main()
+    {
+        TrafficLight light = TrafficLight.Yellow;
+        switch (light)
+        {
+            case TrafficLight.Red: Console.WriteLine("STOP"); break;
+            case TrafficLight.Yellow: Console.WriteLine("SLOW"); break;
+            case TrafficLight.Green: Console.WriteLine("GO"); break;
+        }
+    }
+}`,
+        tests: [{ expectedOutput: 'SLOW', description: 'Yellow → SLOW' }],
+        hints: [
+          'Declare the enum INSIDE class Program (or outside it, both work)',
+          'switch (light) { case TrafficLight.Yellow: ... break; }',
+        ],
+      },
+    },
+    {
+      id: 'l-en-3',
+      title: '[Flags] Challenge',
+      type: 'challenge',
+      xp: 45,
+      challenge: {
+        description: 'A `[Flags]` enum lets you combine values with bitwise OR. Each member uses a distinct power-of-two value so they don\'t overlap.\n\nGiven an integer `mask` (the OR\'d value of one or more permission bits), return a sorted comma-separated string of the permission names contained in it.\n\nThe permissions:\n- `Read = 1`\n- `Write = 2`\n- `Execute = 4`\n- `Delete = 8`\n\nFor example, `mask = 5` (Read | Execute) → `"Execute,Read"` (alphabetical).\n\nReturn `"None"` for `mask = 0`.',
+        difficulty: 'medium',
+        examples: [
+          { input: '0', output: 'None' },
+          { input: '1', output: 'Read' },
+          { input: '5', output: 'Execute,Read', explanation: '1 | 4 = Read | Execute' },
+          { input: '15', output: 'Delete,Execute,Read,Write', explanation: 'All four' },
+        ],
+        functionName: 'DescribeMask',
+        starterCode: `using System;
+using System.Linq;
+
+public class Solution
+{
+    public string DescribeMask(int mask)
+    {
+        // Bits: 1=Read, 2=Write, 4=Execute, 8=Delete
+        // Return sorted names joined by "," or "None"
+        return "";
+    }
+}`,
+        solution: `using System;
+using System.Linq;
+using System.Collections.Generic;
+
+public class Solution
+{
+    public string DescribeMask(int mask)
+    {
+        if (mask == 0) return "None";
+        var names = new List<string>();
+        if ((mask & 1) != 0) names.Add("Read");
+        if ((mask & 2) != 0) names.Add("Write");
+        if ((mask & 4) != 0) names.Add("Execute");
+        if ((mask & 8) != 0) names.Add("Delete");
+        names.Sort();
+        return string.Join(",", names);
+    }
+}`,
+        testCases: [
+          { input: '0', expected: 'None', description: 'Empty mask' },
+          { input: '1', expected: 'Read', description: 'Just Read' },
+          { input: '5', expected: 'Execute,Read', description: 'Read | Execute' },
+          { input: '15', expected: 'Delete,Execute,Read,Write', description: 'All four' },
+          { input: '8', expected: 'Delete', description: 'Just Delete' },
+          { input: '10', expected: 'Delete,Write', description: 'Write | Delete' },
+        ],
+        hints: [
+          'Test each bit with `(mask & N) != 0`',
+          'Collect names in a List<string>, then List.Sort() to alphabetize, then string.Join(",", list)',
+          'Return "None" early when mask == 0',
+        ],
+      },
+    },
+    {
+      id: 'l-en-4',
+      title: 'Enums Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What is the default underlying type for a C# enum?',
+          options: ['byte', 'short', 'int', 'long'],
+          correctIndex: 2,
+          explanation: 'Enums default to `int`. You can specify a smaller type with `enum X : byte { ... }`.',
+        },
+        {
+          question: 'What does `(Color)999` produce when `Color` only defines `Red`, `Green`, `Blue`?',
+          options: [
+            'Compile error',
+            'Runtime ArgumentException',
+            'A Color value of 999 with no name',
+            'The closest defined value',
+          ],
+          correctIndex: 2,
+          explanation: 'Casts from int to enum succeed even if the int isn\'t defined. Use Enum.IsDefined to validate.',
+        },
+        {
+          question: 'In a `[Flags]` enum, why are values usually powers of two (1, 2, 4, 8...)?',
+          options: [
+            'Performance',
+            'So they can be combined with bitwise OR without overlapping',
+            'Compiler requirement',
+            'They aren\'t — any values work',
+          ],
+          correctIndex: 1,
+          explanation: 'Each flag occupies a unique bit. Combining with `|` and testing with `&` only works cleanly when bits don\'t overlap.',
+        },
+      ],
+    },
+  ],
+};
+
 // __END_CHAPTERS__
 
 export const csharpCourse: Course = {
@@ -2303,14 +3521,21 @@ export const csharpCourse: Course = {
   icon: '⚙️',
   chapters: [
     ch1Basics,
+    chCli,
     ch2Variables,
+    chCasting,
     ch3Operators,
     ch4Conditionals,
     ch5Loops,
     ch6Methods,
+    chMethodParams,
+    chConsoleIO,
     ch7Collections,
     ch8Strings,
+    chStringsAdv,
     ch9OopBasics,
+    chAccess,
+    chEnums,
     ch10Inheritance,
     ch11Linq,
     ch12Exceptions,
