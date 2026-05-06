@@ -56,13 +56,20 @@ export function useCSharpRunner() {
       setLoading(false);
 
       const compileText = (data.compiler_error || '').trim();
-      if (compileText) {
-        const diagnostics = parseCSharpDiagnostics(compileText);
+      const diagnostics = compileText ? parseCSharpDiagnostics(compileText) : [];
+      const errorDiagnostics = diagnostics.filter((d) => d.severity === 'error');
+
+      // Real compile failure: there are error diagnostics, OR there's compiler text
+      // we couldn't parse (defensive — better to surface than silently swallow).
+      if (errorDiagnostics.length > 0 || (compileText && diagnostics.length === 0)) {
         const friendly = diagnostics.length > 0
           ? formatDiagnostics(diagnostics)
           : cleanError(compileText);
         return { output: '', error: friendly, diagnostics };
       }
+
+      // From here, compilation succeeded. Warnings (if any) ride along in `diagnostics`
+      // so the UI can show them as info, but they don't block running the program.
 
       const runtimeText = (data.program_error || '').trim();
       const programOut = (data.program_output || '').replace(/\n$/, '');
@@ -70,16 +77,16 @@ export function useCSharpRunner() {
       // Mono prints "Unhandled Exception:" to program_error on runtime crashes
       if (runtimeText && /Exception/.test(runtimeText)) {
         const { message, stack } = parseRuntimeError(runtimeText);
-        return { output: programOut, error: message, stack };
+        return { output: programOut, error: message, stack, diagnostics };
       }
 
       // Non-zero exit code without an exception trace
       if (data.status && data.status !== '0') {
-        const errText = runtimeText || compileText || `Process exited with status ${data.status}.`;
-        return { output: programOut, error: cleanError(errText) };
+        const errText = runtimeText || `Process exited with status ${data.status}.`;
+        return { output: programOut, error: cleanError(errText), diagnostics };
       }
 
-      return { output: programOut, error: null };
+      return { output: programOut, error: null, diagnostics };
     } catch {
       setLoading(false);
       return {

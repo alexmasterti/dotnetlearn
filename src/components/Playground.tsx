@@ -278,6 +278,17 @@ export function Playground() {
             </div>
           )}
 
+          {!hasError && diagnostics.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-dark-600 space-y-3">
+              <div className="text-xs text-yellow-400 uppercase tracking-wider">
+                {diagnostics.length} warning{diagnostics.length === 1 ? '' : 's'} — code still ran
+              </div>
+              {diagnostics.map((d, i) => (
+                <DiagnosticBlock key={i} diag={d} source={code} />
+              ))}
+            </div>
+          )}
+
           {output === null && !hasError && (
             <span className="text-slate-600 italic">Run your code to see output here.</span>
           )}
