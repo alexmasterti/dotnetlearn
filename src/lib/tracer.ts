@@ -57,6 +57,13 @@ export interface TraceFrame {
   step: number;
   line: number;
   method: string;
+  /**
+   * Runtime call depth at this frame. 1 = top-level method (Main), 2 = first
+   * callee of Main, etc. Tracked via injected `__Tracer.Enter()`/`Leave()`
+   * around method bodies. Used by Step Over (advance until depth ≤ current),
+   * Step Out (advance until depth < current), and per-scope variable filter.
+   */
+  depth: number;
   variables: Map<string, TraceVariable>;
 }
 
@@ -172,16 +179,22 @@ export function instrumentCSharp(source: string): string {
     }
 
     // Walk characters; track depth and method-stack transitions.
+    // Detect line-level "this line opens a method body" / "this line closes
+    // it" so we can inject __Tracer.Enter()/Leave() in the right spots.
+    let methodOpenedHere = false;
+    let methodClosedHere = false;
     for (const ch of code) {
       if (ch === '{') {
         depth++;
         if (depth === 2 && pendingMethodName) {
           methodStack.push(pendingMethodName);
           pendingMethodName = null;
+          methodOpenedHere = true;
         }
       } else if (ch === '}') {
         if (depth === 2 && methodStack.length > 0) {
           methodStack.pop();
+          methodClosedHere = true;
         }
         depth = Math.max(0, depth - 1);
       }
@@ -206,6 +219,15 @@ export function instrumentCSharp(source: string): string {
       !isControlOnly &&
       !alreadyInstrumented;
     const currentMethod = startMethod;
+
+    // If this line CLOSES a method body, emit `} finally { Leave(); }`
+    // BEFORE the user's `}` so the try block we opened on the matching open
+    // gets closed cleanly. Skip if the close `}` isn't the leading char of
+    // the line (we'd otherwise generate broken syntax). With well-formed
+    // Allman/K&R braces this is always the case.
+    if (methodClosedHere && /^\s*\}/.test(raw)) {
+      out.push(`        } finally { __Tracer.Leave(); }`);
+    }
 
     // Emit POS BEFORE the user's line so a "paused frame at L N" means
     // "about to execute L N" (matches VS Code's stop-on-line semantics).
@@ -235,6 +257,14 @@ export function instrumentCSharp(source: string): string {
         }
       }
     }
+
+    // If this line OPENS a method body, emit `Enter(); try {` AFTER the
+    // user's `{` so the try wraps the entire body. Skip if the open `{`
+    // wasn't the trailing char of the line (we'd otherwise inject inside a
+    // statement). Well-formed Allman/K&R always has `{` at end-of-line.
+    if (methodOpenedHere && /\{\s*$/.test(raw)) {
+      out.push(`        __Tracer.Enter(); try {`);
+    }
   }
 
   return out.join('\n') + '\n' + TRACER_FOOTER;
@@ -249,13 +279,16 @@ internal static class __Tracer
 {
     static int _step = 0;
     static int _count = 0;
+    static int _depth = 0;
+    public static void Enter() { _depth++; }
+    public static void Leave() { if (_depth > 0) _depth--; }
     public static T Mark<T>(int line, string method, string name, T value)
     {
         if (_count >= ${MAX_TRACE_PER_RUN}) return value;
         _count++;
         _step++;
         var v = (object)value;
-        System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|" + name + "|" + Format(v));
+        System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|" + _depth + "|" + name + "|" + Format(v));
         DumpFields(line, method, name, v);
         return value;
     }
@@ -264,7 +297,7 @@ internal static class __Tracer
         if (_count >= ${MAX_TRACE_PER_RUN}) return;
         _count++;
         _step++;
-        System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|${POS_MARKER}|");
+        System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|" + _depth + "|${POS_MARKER}|");
     }
     static bool IsSimple(System.Type t)
     {
@@ -302,7 +335,7 @@ internal static class __Tracer
                 _count++;
                 _step++;
                 seen.Add(f.Name);
-                System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|" + baseName + "." + f.Name + "|" + Format(fv));
+                System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|" + _depth + "|" + baseName + "." + f.Name + "|" + Format(fv));
             }
             var props = t.GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
             for (int i = 0; i < props.Length; i++)
@@ -317,7 +350,7 @@ internal static class __Tracer
                 if (_count >= ${MAX_TRACE_PER_RUN}) return;
                 _count++;
                 _step++;
-                System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|" + baseName + "." + p.Name + "|" + Format(pv));
+                System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|" + _depth + "|" + baseName + "." + p.Name + "|" + Format(pv));
             }
         }
         catch { }
@@ -398,33 +431,42 @@ export function parseTraceOutput(rawStdout: string): ParsedTrace {
   const lines = rawStdout.split('\n');
   const clean: string[] = [];
   const frames: TraceFrame[] = [];
-  const liveVars = new Map<string, TraceVariable>();
+  // We track each variable's owning depth so on each Pos we can drop ones
+  // declared inside callees that have since returned (Leave decremented
+  // _depth; the next Pos sees the lower depth). This implements per-scope
+  // filtering without needing a separate scope-end marker.
+  interface LiveVar { value: string; line: number; step: number; depth: number; }
+  const liveVars = new Map<string, LiveVar>();
   let truncated = false;
 
   for (const ln of lines) {
-    if (ln.startsWith(TRACE_MARKER)) {
-      const body = ln.slice(TRACE_MARKER.length);
-      const parts = body.split('|');
-      // Format: <step>|<line>|<method>|<name>|<value...>
-      if (parts.length >= 5) {
-        const step = parseInt(parts[0], 10);
-        const line = parseInt(parts[1], 10);
-        const method = parts[2];
-        const name = parts[3];
-        const rawValue = parts.slice(4).join('|');
-        if (name === POS_MARKER) {
-          frames.push({
-            step,
-            line,
-            method,
-            variables: new Map(liveVars),
-          });
-        } else {
-          liveVars.set(name, { value: rawValue, line, step });
-        }
-      }
-    } else {
+    if (!ln.startsWith(TRACE_MARKER)) {
       clean.push(ln);
+      continue;
+    }
+    const body = ln.slice(TRACE_MARKER.length);
+    const parts = body.split('|');
+    // Format: <step>|<line>|<method>|<depth>|<name>|<value...>
+    if (parts.length < 6) continue;
+    const step = parseInt(parts[0], 10);
+    const line = parseInt(parts[1], 10);
+    const method = parts[2];
+    const depth = parseInt(parts[3], 10);
+    const name = parts[4];
+    const rawValue = parts.slice(5).join('|');
+    if (name === POS_MARKER) {
+      // Drop variables that lived at deeper scopes (those callees have
+      // returned by the time control reached this Pos).
+      const stale: string[] = [];
+      for (const [k, v] of liveVars) if (v.depth > depth) stale.push(k);
+      for (const k of stale) liveVars.delete(k);
+      const snapshot = new Map<string, TraceVariable>();
+      for (const [k, v] of liveVars) {
+        snapshot.set(k, { value: v.value, line: v.line, step: v.step });
+      }
+      frames.push({ step, line, method, depth, variables: snapshot });
+    } else {
+      liveVars.set(name, { value: rawValue, line, step, depth });
     }
   }
   if (frames.length >= MAX_TRACE_PER_RUN) truncated = true;

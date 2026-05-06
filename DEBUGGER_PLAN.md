@@ -29,74 +29,37 @@ fields are skipped (depth=1) to avoid cycles. Implementation in
 `TRACER_FOOTER` of `src/lib/tracer.ts`. CodeEditor hover updated to walk
 dotted identifiers (`obj.id`) and fall back to parent on miss.
 
-### 2. Step Over stuck inside callees
+### 2. Step Over stuck inside callees — DONE
 
-User reported: paused inside `setId` (after Step Into), clicking Step Over
-should return to Main. Previously kept advancing within setId until end of
-trace.
-
-**Status:** Partially fixed in commit `a4ea051+1` with a `seenBefore`
-heuristic — Step Over now advances until next frame whose method has
-been visited before. Works for non-recursive flows.
-
-**Still broken:**
-- **Recursion**: when `Main` calls itself, every frame is in `Main` and the
-  heuristic can't tell deeper-call frames from same-call ones.
-- **Step Over inside a deep stack**: if `foo` calls `bar` calls `baz`, Step
-  Over from `bar` ideally returns to `foo`, not all the way out. Heuristic
-  may overshoot if `baz` hasn't been seen yet.
-
-**Real fix:** track call depth in the tracer.
+Resolved by injecting `__Tracer.Enter()` / `Leave()` around every method
+body via a try/finally wrapper. The instrumentation pass detects the line
+where a method's `{` opens (depth 1→2) and the line where its `}` closes
+(depth 2→1), and emits:
 
 ```csharp
-internal static class __Tracer {
-    static int _depth = 0;
-    public static void Enter() { _depth++; }
-    public static void Leave() { _depth--; }
-    public static void Pos(int line, string method) {
-        ...stdout: __TRACE__:<step>|<line>|<method>|<depth>|@@POS@@|
-    }
+void Foo() {
+    __Tracer.Enter(); try {     // injected
+        // user code
+    } finally { __Tracer.Leave(); }   // injected
 }
 ```
 
-Inject `Enter()` right after the opening `{` of every method body, and
-`Leave()` right before each `return` and the closing `}`. Use `try/finally`
-to handle exceptions cleanly:
+Each `Pos` and `Mark` marker now carries the runtime depth. Step controls
+became precise:
+- **Step Over**: advance until next frame with `depth ≤ current.depth`
+- **Step Into**: advance to next frame (no constraint)
+- **Step Out**: advance until next frame with `depth < current.depth`
 
-```csharp
-public int Helper(int n) {
-    __Tracer.Enter();
-    try {
-        __Tracer.Pos(7, "Helper");
-        return n * 2;  // tracer.Leave still runs
-    } finally {
-        __Tracer.Leave();
-    }
-}
-```
+Works for recursion (each recursive call increments depth). Limitation:
+expression-bodied methods (`int X() => ...;`) and accessor-only properties
+have no `{...}` block, so their bodies don't get Enter/Leave.
 
-This is invasive — the instrumentation pass must rewrite method bodies into
-try/finally form. Complicates the line-number mapping. Maybe 2-3 hours of
-careful work.
+### 3. Variables panel leaks across scopes — DONE
 
-With call depth, every step control becomes correct:
-- **Step Over**: advance to next frame with `depth ≤ current.depth`
-- **Step Into**: advance to next frame
-- **Step Out**: advance to first frame with `depth < current.depth`
-
-### 3. Variables panel leaks across scopes
-
-After Step Out from `setId`, the Main panel still shows variables from
-inside setId (none in the user's example, but locals would persist).
-Conversely, after returning to Main, locals from Helper are still listed.
-
-The accumulator in `parseTraceOutput` is global. Per-method scoping needs
-either:
-- Tracking which method declared each variable, plus call depth, plus
-  filtering at render time to "vars declared in active call frames only"
-- Or reset variables on `Leave` if we add the runtime call tracking from #2.
-
-Combined fix with #2: when tracer emits `Leave`, also emit a `__SCOPE_END:<method>` marker. The parser drops variables that were declared inside that scope.
+Falls out of #2 automatically. Each `Mark` records the depth at which a
+variable was set; on every `Pos` the parser drops variables whose recorded
+depth exceeds the new depth (those scopes have returned). No separate
+`__SCOPE_END` marker needed — the depth on `Pos` is the source of truth.
 
 ### 4. Hover values don't refresh on scrub
 
@@ -145,10 +108,10 @@ Document those clearly so users aren't surprised.
 
 ## Suggested next-session order
 
-1. ~~Fix #1 (object field display)~~ — **DONE.** See above.
-2. **Fix #2 (call-depth tracking + try/finally injection)** — fixes Step
-   Over recursion + edge cases properly. ~2-3 hours including testing.
-3. **Fix #3 (per-scope variables)** — falls out of #2 with extra `Leave`
-   markers. ~30 min.
+1. ~~Fix #1 (object field display)~~ — **DONE.**
+2. ~~Fix #2 (call-depth tracking)~~ — **DONE.**
+3. ~~Fix #3 (per-scope variables)~~ — **DONE.**
 4. Optional: **VS-code-tab-style call stack panel.** Shows the chain of
-   method calls leading to the current frame. UI-only once #2 is done.
+   method calls leading to the current frame. UI-only — each frame already
+   has depth + method name; build the stack by walking back from the current
+   frame, stopping when depth drops.
