@@ -12871,7 +12871,7 @@ const chPlugin: Chapter = {
       xp: 25,
       theory: `# Plugin architectures
 
-Sometimes you want to load .NET code that wasn't on disk when your app started: plugin systems, hot-reload, scripting hosts. .NET\'s primary tool is **\`AssemblyLoadContext\` (ALC)**.
+Sometimes you want to load .NET code that wasn't on disk when your app started: plugin systems, hot-reload, scripting hosts. The primary tool is **\`AssemblyLoadContext\` (ALC)**.
 
 ## What an ALC is
 
