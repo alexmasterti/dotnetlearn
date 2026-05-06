@@ -4669,14 +4669,14 @@ Use sparingly — you're telling the compiler to trust you. If you're wrong, you
       type: 'code',
       xp: 25,
       codeExercise: {
-        instructions: 'Given a `string` named `input` (set to `null` for testing), use the null-coalescing operator `??` to print `"(none)"` when input is null, otherwise print input.\n\n**Note:** in a project with `<Nullable>enable</Nullable>` you would write `string?` to mark it nullable. Our sandbox uses an older compiler so we omit the `?`.\n\nExpected output:\n```\n(none)\n```',
+        instructions: 'Given a `string?` named `input` (set to `null` for testing), use the null-coalescing operator `??` to print `"(none)"` when input is null, otherwise print input.\n\nExpected output:\n```\n(none)\n```',
         starterCode: `using System;
 
 class Program
 {
     static void Main()
     {
-        string input = null;
+        string? input = null;
         // Print input ?? "(none)"
 
     }
@@ -4688,7 +4688,7 @@ class Program
 {
     static void Main()
     {
-        string input = null;
+        string? input = null;
         Console.WriteLine(input ?? "(none)");
     }
 }`,
@@ -5625,7 +5625,7 @@ int sum = AddAsync(2, 3).GetAwaiter().GetResult();
 int sum = AddAsync(2, 3).Result;
 \`\`\`
 
-In a console \`Main\`, \`async Main\` is supported in modern .NET:
+In a console \`Main\`, \`async Main\` is supported (and what you'll usually use):
 
 \`\`\`csharp
 public static async Task Main(string[] args)
@@ -5635,7 +5635,7 @@ public static async Task Main(string[] args)
 }
 \`\`\`
 
-(The example in this lesson's sandbox uses \`.GetAwaiter().GetResult()\` because our compiler is older — modern .NET supports \`async Main\` directly.)
+This is what you'll write in modern code. The \`.GetAwaiter().GetResult()\` form is mostly seen in older code or when something prevents an async entry point.
 
 ## Naming
 
@@ -6380,7 +6380,7 @@ if ((status, role) is ("active", "admin")) ...
 - Filtering \`Where(x => x is Cat c && c.Age > 5)\`
 - \`switch\` (next lesson)
 
-Some of these (\`and\`, \`or\`, property patterns) require C# 8+ / 9+ / 10+. Our sandbox uses an older compiler, so the runnable examples in the next code lesson stick to the classic \`is X x\` form.`,
+All of these compile and run in our sandbox (.NET 9). Try them out.`,
     },
     {
       id: 'l-pat-2',
@@ -6456,15 +6456,15 @@ static string Outcome(int hp, bool healed) => (hp, healed) switch
 - Compose nested conditions tersely
 - Fewer cast errors
 
-Some switch-expression syntax (relational patterns \`> 0\`, property patterns) is C# 9+ — won't compile in our sandbox. The code lesson uses the older \`switch\` statement form, which works everywhere.`,
+All forms here — relational patterns, property patterns, tuple patterns — compile in our sandbox. The code lesson uses a switch expression directly.`,
     },
     {
       id: 'l-pat-3',
-      title: 'Practice: Shape Area',
+      title: 'Practice: Shape Area (switch expression)',
       type: 'code',
-      xp: 30,
+      xp: 35,
       codeExercise: {
-        instructions: 'Implement `static double Area(Shape s)` using `if (s is X x)` type patterns.\n\n- `Circle` → π × r²\n- `Rectangle` → w × h\n- Anything else → 0\n\n**Note:** in modern C# you would write a `switch` with `case Circle c:` — our older sandbox compiler doesn\'t support that yet, so we use the equivalent if-chain.\n\n`Main()` calls Area on a Circle(2) and a Rectangle(3, 4) and prints both rounded to 2 decimals.\n\nExpected output:\n```\n12.57\n12.00\n```',
+        instructions: 'Implement `static double Area(Shape s)` using a `switch` expression with type patterns.\n\n- `Circle` → π × r²\n- `Rectangle` → w × h\n- Anything else → 0\n\n`Main()` calls Area on a Circle(2) and a Rectangle(3, 4) and prints both rounded to 2 decimals.\n\nExpected output:\n```\n12.57\n12.00\n```',
         starterCode: `using System;
 using System.Globalization;
 
@@ -6474,12 +6474,12 @@ class Rectangle : Shape { public double W, H; }
 
 class Program
 {
-    static double Area(Shape s)
+    static double Area(Shape s) => s switch
     {
-        // if (s is Circle c) return ...;
-        // if (s is Rectangle r) return ...;
-        return 0;
-    }
+        // Circle c    => ...,
+        // Rectangle r => ...,
+        _ => 0,
+    };
 
     static void Main()
     {
@@ -6497,12 +6497,12 @@ class Rectangle : Shape { public double W, H; }
 
 class Program
 {
-    static double Area(Shape s)
+    static double Area(Shape s) => s switch
     {
-        if (s is Circle c)    return Math.PI * c.R * c.R;
-        if (s is Rectangle r) return r.W * r.H;
-        return 0;
-    }
+        Circle c    => Math.PI * c.R * c.R,
+        Rectangle r => r.W * r.H,
+        _           => 0,
+    };
 
     static void Main()
     {
@@ -6510,11 +6510,11 @@ class Program
         Console.WriteLine(Area(new Rectangle { W = 3, H = 4 }).ToString("F2", CultureInfo.InvariantCulture));
     }
 }`,
-        tests: [{ expectedOutput: '12.57\n12.00', description: 'Shape areas via type pattern' }],
+        tests: [{ expectedOutput: '12.57\n12.00', description: 'Shape areas via switch expression' }],
         hints: [
-          '`if (s is Circle c) return ...;` binds c to the Circle instance — no cast needed',
-          'Chain `is` checks for each type, return early on match',
-          'If neither matched, return 0',
+          '`Circle c => ...,` is a type pattern — matches when s is a Circle and binds c',
+          'Each arm returns the area of that shape',
+          '`_ => 0` is the default arm',
         ],
       },
     },
@@ -7321,11 +7321,97 @@ var p = new Point { X = 1, Y = 2 };   // OK
 // p.X = 3;                            // error — init-only
 \`\`\`
 
-Records use init-only by default.
+Records use init-only by default.`,
+    },
+    {
+      id: 'l-rec-2-code',
+      title: 'Practice: Define a Record',
+      type: 'code',
+      xp: 35,
+      codeExercise: {
+        instructions: 'Define a positional `record Book(string Title, string Author, int Year)` at the top level. `Main()` already creates two books and prints whether they\'re equal, then makes a copy of one with `with` (changing Year) and prints that.\n\nExpected output:\n```\nTrue\nBook { Title = Clean Code, Author = Robert Martin, Year = 2009 }\n```',
+        starterCode: `using System;
 
-## Sandbox note
+// Define a record Book(...) here
 
-This sandbox uses an older compiler that **doesn't support records or init**. The code above is valid C# 9+ and runs in any modern \`dotnet run\`. We'll move to a newer runtime in a later iteration so you can practice these directly. Until then, this lesson is reading-only.`,
+class Program
+{
+    static void Main()
+    {
+        var a = new Book("Clean Code", "Robert Martin", 2008);
+        var b = new Book("Clean Code", "Robert Martin", 2008);
+        Console.WriteLine(a == b);
+        var c = a with { Year = 2009 };
+        Console.WriteLine(c);
+    }
+}
+`,
+        solution: `using System;
+
+public record Book(string Title, string Author, int Year);
+
+class Program
+{
+    static void Main()
+    {
+        var a = new Book("Clean Code", "Robert Martin", 2008);
+        var b = new Book("Clean Code", "Robert Martin", 2008);
+        Console.WriteLine(a == b);
+        var c = a with { Year = 2009 };
+        Console.WriteLine(c);
+    }
+}`,
+        tests: [{ expectedOutput: 'True\nBook { Title = Clean Code, Author = Robert Martin, Year = 2009 }', description: 'Value equality + with-expression' }],
+        hints: [
+          'A positional record is one line: `public record Book(string Title, string Author, int Year);`',
+          'The `with` expression returns a new record — the original `a` is unchanged',
+          'The auto-generated ToString puts braces around `Title = ..., Author = ..., Year = ...`',
+        ],
+      },
+    },
+    {
+      id: 'l-rec-3-init',
+      title: 'Practice: init-only setters',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Define a `class Point` with `int X` and `int Y` as **init-only** properties. `Main()` creates a Point with object-initializer syntax and prints `(X,Y)`.\n\nExpected output:\n```\n(3,4)\n```',
+        starterCode: `using System;
+
+// Define class Point with init-only X and Y
+
+class Program
+{
+    static void Main()
+    {
+        var p = new Point { X = 3, Y = 4 };
+        Console.WriteLine($"({p.X},{p.Y})");
+    }
+}
+`,
+        solution: `using System;
+
+class Point
+{
+    public int X { get; init; }
+    public int Y { get; init; }
+}
+
+class Program
+{
+    static void Main()
+    {
+        var p = new Point { X = 3, Y = 4 };
+        Console.WriteLine($"({p.X},{p.Y})");
+    }
+}`,
+        tests: [{ expectedOutput: '(3,4)', description: 'init-only props set via object initializer' }],
+        hints: [
+          'Auto-property syntax with `init` instead of `set`: `public int X { get; init; }`',
+          'No constructor needed — the object initializer fills the values',
+          'Try adding `p.X = 99;` after the construction. The compiler will reject it.',
+        ],
+      },
     },
     {
       id: 'l-rec-2',
