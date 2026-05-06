@@ -23,12 +23,22 @@ const PRIMITIVE_TYPES = new Set([
   'float', 'double', 'decimal', 'bool', 'char', 'string', 'var',
 ]);
 
-const TYPE_DECL_RE = new RegExp(
-  '^\\s*(?:int|long|short|byte|sbyte|uint|ulong|ushort|float|double|decimal|bool|char|string|var)(?:\\[\\])?\\s+([A-Za-z_]\\w*)\\s*=\\s*[^;]+;\\s*$',
-);
+// Matches any local declaration: `<Type[generics][?][[]]> name = ...;`
+// Type can be a primitive (int, string), `var`, a user type (Vehicule),
+// dotted (System.Text.StringBuilder), generic (List<int>), array (int[]),
+// nullable (string?). Names starting with a leading uppercase identifier are
+// the user-defined-type case; matching is conservative — must have a real
+// `=` (not `==`) and end with `;`.
+const TYPE_DECL_RE = /^\s*(?:[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:<[^>;{}]+>)?(?:\[\])?\??\s+([A-Za-z_]\w*)\s*=\s*[^=;][^;]*;\s*$/;
 const COMPOUND_RE = /^\s*([A-Za-z_]\w*)\s*(?:\+|-|\*|\/|%|&|\||\^)=\s*[^;]+;\s*$/;
 const ASSIGN_RE = /^\s*([A-Za-z_]\w*)\s*=\s*[^=;][^;]*;\s*$/;
 const INC_DEC_RE = /^\s*(?:\+\+|--)?([A-Za-z_]\w*)(?:\+\+|--)?\s*;\s*$/;
+
+// `if(...){...}` / `while(...){...}` / single-line method bodies all share
+// the shape `... ){ stmt; }` on one source line. Mono compiles them fine but
+// our depth-tracking instrumentation skips them. Pre-expand to multi-line so
+// the body is at depth >= 2 across multiple lines and gets instrumented.
+const SINGLE_LINE_BODY_RE = /^(\s*)(.*?\)\s*)\{\s*(.+;)\s*\}\s*$/;
 
 const KEYWORDS_NOT_METHODS = new Set([
   'if', 'while', 'for', 'foreach', 'switch', 'catch', 'using', 'lock',
@@ -56,8 +66,76 @@ export interface ParsedTrace {
   truncated: boolean;
 }
 
+/**
+ * Pre-expand single-line bodies like `{ stmt; }` into multi-line form so the
+ * statement inside ends up at instrumentable depth. Returns both the expanded
+ * source and a parallel array mapping each expanded line back to the original
+ * 1-based line number — used so trace markers report the user's line.
+ */
+function expandSingleLineBodies(source: string): { expanded: string; lineMap: number[] } {
+  const inLines = source.split('\n');
+  const out: string[] = [];
+  const lineMap: number[] = [];
+  for (let i = 0; i < inLines.length; i++) {
+    const userLine = i + 1;
+    const line = inLines[i];
+    const m = line.match(SINGLE_LINE_BODY_RE);
+    if (m) {
+      const indent = m[1];
+      const sig = m[2];
+      // Split body on `;` outside of strings (best-effort: mask strings then split)
+      const body = m[3].trim();
+      const masked = maskStringsAndCharsInline(body);
+      const positions: number[] = [];
+      for (let p = 0; p < masked.length; p++) if (masked[p] === ';') positions.push(p);
+      const stmts: string[] = [];
+      let start = 0;
+      for (const pos of positions) {
+        const piece = body.slice(start, pos).trim();
+        if (piece) stmts.push(piece);
+        start = pos + 1;
+      }
+      out.push(`${indent}${sig}{`);
+      lineMap.push(userLine);
+      for (const s of stmts) {
+        out.push(`${indent}    ${s};`);
+        lineMap.push(userLine);
+      }
+      out.push(`${indent}}`);
+      lineMap.push(userLine);
+    } else {
+      out.push(line);
+      lineMap.push(userLine);
+    }
+  }
+  return { expanded: out.join('\n'), lineMap };
+}
+
+function maskStringsAndCharsInline(s: string): string {
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    if (ch === '"' || ch === '\'') {
+      out += ' ';
+      i++;
+      const close = ch;
+      while (i < s.length && s[i] !== close) {
+        if (s[i] === '\\' && i + 1 < s.length) { out += '  '; i += 2; }
+        else { out += ' '; i++; }
+      }
+      if (i < s.length) { out += ' '; i++; }
+    } else {
+      out += ch;
+      i++;
+    }
+  }
+  return out;
+}
+
 export function instrumentCSharp(source: string): string {
-  const lines = source.split('\n');
+  const { expanded, lineMap } = expandSingleLineBodies(source);
+  const lines = expanded.split('\n');
   const out: string[] = [];
   let inBlockComment = false;
   let depth = 0;
@@ -69,13 +147,22 @@ export function instrumentCSharp(source: string): string {
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
-    const lineNo = i + 1;
+    // Use the user's original line number so the editor highlights the right line
+    // even after we've expanded `{ stmt; }` into multi-line form.
+    const lineNo = lineMap[i] ?? (i + 1);
     const stripped = stripStringsAndComments(raw, inBlockComment);
     inBlockComment = stripped.inBlockComment;
     const code = stripped.code;
 
+    // Snapshot state at the START of this line — that's what determines
+    // whether the user's statement on this line is "inside a method body".
+    // Computing this AFTER brace-walking would incorrectly include method-
+    // declaration lines (depth=1 at start, then `{` opens to 2).
+    const startDepth = depth;
+    const startMethod = methodStack[methodStack.length - 1] ?? '';
+    const wasInMethodBody = startDepth >= 2 && startMethod !== '';
+
     // While at class-body depth (1) we look for method signatures.
-    // Heuristic: the LAST identifier followed by ( ... ) at this depth is the method name.
     if (depth === 1 && pendingMethodName === null) {
       const sigMatch = code.match(/(?<!\.)\b([A-Za-z_]\w*)\s*\([^)]*\)\s*(?:\{|=>|$)/);
       if (sigMatch) {
@@ -85,7 +172,6 @@ export function instrumentCSharp(source: string): string {
     }
 
     // Walk characters; track depth and method-stack transitions.
-    let leftMethodOnThisLine = false;
     for (const ch of code) {
       if (ch === '{') {
         depth++;
@@ -96,7 +182,6 @@ export function instrumentCSharp(source: string): string {
       } else if (ch === '}') {
         if (depth === 2 && methodStack.length > 0) {
           methodStack.pop();
-          leftMethodOnThisLine = true;
         }
         depth = Math.max(0, depth - 1);
       }
@@ -106,9 +191,6 @@ export function instrumentCSharp(source: string): string {
       pendingMethodName = null;
     }
 
-    const currentMethod = methodStack[methodStack.length - 1] ?? '';
-    const inMethodBody = depth >= 2 && currentMethod !== '' && !leftMethodOnThisLine;
-
     const trimmed = raw.trim();
     const isComment = !trimmed || trimmed.startsWith('//');
     const isPureBrace = trimmed === '{' || trimmed === '}' || trimmed === '{}';
@@ -117,12 +199,13 @@ export function instrumentCSharp(source: string): string {
     const alreadyInstrumented = /__Tracer\./.test(raw);
 
     const shouldInstrument =
-      inMethodBody &&
+      wasInMethodBody &&
       !isComment &&
       !isPureBrace &&
       !isForHeader &&
       !isControlOnly &&
       !alreadyInstrumented;
+    const currentMethod = startMethod;
 
     // Emit POS BEFORE the user's line so a "paused frame at L N" means
     // "about to execute L N" (matches VS Code's stop-on-line semantics).
