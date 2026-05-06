@@ -7519,6 +7519,1244 @@ You'll mostly **consume** variance, not declare it: passing a \`List<Cat>\` to a
   ],
 };
 
+const chConfig: Chapter = {
+  id: 'ch-config',
+  title: 'Configuration & Options',
+  description: 'appsettings.json, env vars, IConfiguration',
+  icon: '⚙️',
+  lessons: [
+    {
+      id: 'l-cfg-1',
+      title: 'appsettings.json & IConfiguration',
+      type: 'theory',
+      xp: 20,
+      theory: `# Configuration in modern .NET
+
+Modern .NET apps centralize configuration in **\`IConfiguration\`** — a unified API that reads settings from many sources and merges them.
+
+## Default sources (in order of priority — later overrides earlier)
+
+1. \`appsettings.json\`
+2. \`appsettings.{Environment}.json\` (Development, Staging, Production, ...)
+3. User secrets (in Development only)
+4. Environment variables
+5. Command-line arguments
+
+The Generic Host wires all these up automatically. You don't need to call them by hand.
+
+## A typical appsettings.json
+
+\`\`\`json
+{
+  "ConnectionStrings": {
+    "Default": "Server=localhost;Database=app;..."
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "Mail": {
+    "Server": "smtp.example.com",
+    "Port": 587,
+    "FromAddress": "noreply@example.com"
+  }
+}
+\`\`\`
+
+## Reading values
+
+\`\`\`csharp
+public class HomeController : Controller
+{
+    private readonly IConfiguration _config;
+    public HomeController(IConfiguration config) => _config = config;
+
+    public IActionResult Index()
+    {
+        string conn = _config["ConnectionStrings:Default"];   // colon for nesting
+        string mail = _config.GetSection("Mail")["Server"];
+        int port = _config.GetValue<int>("Mail:Port");
+        return View();
+    }
+}
+\`\`\`
+
+The colon \`:\` traverses nested sections.
+
+## Override at runtime
+
+Environment variables use a double-underscore for nesting (since most shells dislike \`:\`):
+
+\`\`\`bash
+export Mail__Server=smtp.real-host.com
+dotnet run
+\`\`\`
+
+Or in Docker:
+
+\`\`\`dockerfile
+ENV Mail__Server=smtp.real-host.com
+\`\`\`
+
+## Per-environment files
+
+\`appsettings.Production.json\` overrides \`appsettings.json\` when \`ASPNETCORE_ENVIRONMENT=Production\`. Common pattern:
+
+- \`appsettings.json\` — checked in, contains defaults
+- \`appsettings.Development.json\` — checked in, dev-only overrides
+- \`appsettings.Production.json\` — checked in if non-secret, otherwise injected via env vars
+
+**Never commit secrets.** Use User Secrets locally and a vault (Azure Key Vault, AWS Secrets Manager, ...) in prod.`,
+    },
+    {
+      id: 'l-cfg-2',
+      title: 'The Options Pattern',
+      type: 'theory',
+      xp: 20,
+      theory: `# IOptions<T>
+
+Reading config keys with strings (\`_config["Mail:Server"]\`) is fine for small apps but doesn't scale. The **options pattern** binds a section of config to a strongly-typed POCO.
+
+## Step 1 — define a class
+
+\`\`\`csharp
+public class MailOptions
+{
+    public string Server { get; set; } = "";
+    public int Port { get; set; }
+    public string FromAddress { get; set; } = "";
+}
+\`\`\`
+
+## Step 2 — register it
+
+\`\`\`csharp
+builder.Services.Configure<MailOptions>(
+    builder.Configuration.GetSection("Mail"));
+\`\`\`
+
+That binds the JSON section to \`MailOptions\` whenever someone asks for one via DI.
+
+## Step 3 — consume it
+
+\`\`\`csharp
+public class EmailService
+{
+    private readonly MailOptions _opts;
+
+    public EmailService(IOptions<MailOptions> opts)
+    {
+        _opts = opts.Value;
+    }
+
+    public void Send(string to, string body)
+    {
+        var smtp = new SmtpClient(_opts.Server, _opts.Port);
+        smtp.Send(_opts.FromAddress, to, "subject", body);
+    }
+}
+\`\`\`
+
+## Three flavors
+
+| Interface | When values can change |
+|---|---|
+| \`IOptions<T>\` | Captured once at app start — never changes |
+| \`IOptionsSnapshot<T>\` | Re-read per request (only in scoped contexts like web requests) |
+| \`IOptionsMonitor<T>\` | Real-time, with change notifications |
+
+For most code, \`IOptions<T>\` is fine.
+
+## Validation
+
+\`\`\`csharp
+builder.Services
+    .AddOptions<MailOptions>()
+    .Bind(builder.Configuration.GetSection("Mail"))
+    .Validate(o => o.Port > 0 && o.Port < 65536, "Port must be 1-65535")
+    .ValidateOnStart();
+\`\`\`
+
+\`ValidateOnStart\` fails the app at boot if config is bad — far better than a mystery failure at first email send.
+
+## Why bother
+
+- **Type safety** — typo in a key is a compile error, not a runtime null
+- **Discoverability** — IDE autocomplete shows the available keys
+- **Testability** — pass any \`MailOptions\` instance in unit tests, no fake config provider needed`,
+    },
+    {
+      id: 'l-cfg-3',
+      title: 'Secrets & environments',
+      type: 'theory',
+      xp: 15,
+      theory: `# Secrets and environments
+
+The cardinal rule: **never commit secrets**. Connection strings with passwords, API keys, OAuth client secrets — all kryptonite if leaked.
+
+## User Secrets (development only)
+
+\`\`\`bash
+dotnet user-secrets init
+dotnet user-secrets set "Mail:ApiKey" "sk_test_xxx"
+\`\`\`
+
+User Secrets store values in a JSON file outside the repo (\`~/.microsoft/usersecrets/<id>/secrets.json\` on \\*nix). The Generic Host auto-loads them in Development environment.
+
+## Environment variables (any environment)
+
+\`\`\`bash
+export Mail__ApiKey=sk_live_xxx
+dotnet run
+\`\`\`
+
+Use double-underscore for nesting; .NET's environment provider translates them to \`Mail:ApiKey\`.
+
+## Cloud secret stores
+
+Production should pull from a secret manager:
+
+- **Azure Key Vault** — \`AddAzureKeyVault(...)\` extension
+- **AWS Secrets Manager** — third-party providers
+- **HashiCorp Vault** — same
+- **Doppler / 1Password / Bitwarden** — same
+
+These plug into IConfiguration like any other source — your app just reads via \`IConfiguration\` or \`IOptions<T>\`.
+
+## Setting the environment
+
+The host reads \`ASPNETCORE_ENVIRONMENT\` (web) or \`DOTNET_ENVIRONMENT\` (anything) to decide which \`appsettings.{Env}.json\` to load.
+
+\`\`\`bash
+ASPNETCORE_ENVIRONMENT=Production dotnet run
+\`\`\`
+
+Or in Docker:
+
+\`\`\`dockerfile
+ENV ASPNETCORE_ENVIRONMENT=Production
+\`\`\`
+
+The convention is "Development", "Staging", "Production" — but you can use any string. \`builder.Environment.IsDevelopment()\` etc. are convenience checks.
+
+## launchSettings.json — for local development
+
+\`\`\`json
+{
+  "profiles": {
+    "MyApp": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Mail__Server": "smtp.mailtrap.io"
+      }
+    }
+  }
+}
+\`\`\`
+
+This file is for *your machine* and should NOT be relied on in CI/CD. It lives in \`Properties/\` and is read only when launching locally via \`dotnet run\` or your IDE.`,
+    },
+    {
+      id: 'l-cfg-4',
+      title: 'Configuration Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Which order is the default IConfiguration source priority (later wins)?',
+          options: [
+            'Environment variables → appsettings.json',
+            'appsettings.json → appsettings.Environment.json → user secrets → env vars → command line',
+            'Random per-app',
+            'Only appsettings.json is read by default',
+          ],
+          correctIndex: 1,
+          explanation: 'Generic Host wires up sources in that order. Later sources override earlier ones — so command-line args beat env vars beat user secrets beat appsettings.',
+        },
+        {
+          question: 'Why prefer `IOptions<MailOptions>` over `IConfiguration["Mail:Server"]`?',
+          options: [
+            'IOptions is faster',
+            'Type safety, IDE autocomplete, easier unit testing',
+            'IConfiguration is deprecated',
+            'IOptions is the only way to read config',
+          ],
+          correctIndex: 1,
+          explanation: 'Strongly-typed options stop typos at compile, document the schema, and let tests pass any POCO instance.',
+        },
+        {
+          question: 'How do you nest config keys when setting an environment variable?',
+          options: [
+            'Mail:Server',
+            'Mail.Server',
+            'Mail__Server (double underscore)',
+            'Mail-Server',
+          ],
+          correctIndex: 2,
+          explanation: 'Most shells reject the colon. Double-underscore is .NET\'s standard substitute that the env-var provider translates back to nested sections.',
+        },
+        {
+          question: 'Which option flavor is best when you want config changes to apply mid-request?',
+          options: ['IOptions<T>', 'IOptionsSnapshot<T>', 'IOptionsMonitor<T>', 'IConfiguration'],
+          correctIndex: 1,
+          explanation: 'IOptionsSnapshot rebinds per request scope. IOptionsMonitor adds change notifications. IOptions is one-shot at app start.',
+        },
+      ],
+    },
+  ],
+};
+
+const chLogging: Chapter = {
+  id: 'ch-logging',
+  title: 'Logging with ILogger<T>',
+  description: 'Structured, level-aware, provider-agnostic',
+  icon: '📝',
+  lessons: [
+    {
+      id: 'l-lg-1',
+      title: 'ILogger basics',
+      type: 'theory',
+      xp: 20,
+      theory: `# ILogger<T>
+
+The .NET logging abstraction is \`ILogger<T>\` — request it via DI and the framework decides which providers process the messages.
+
+## Inject it
+
+\`\`\`csharp
+public class OrderService
+{
+    private readonly ILogger<OrderService> _log;
+
+    public OrderService(ILogger<OrderService> log)
+    {
+        _log = log;
+    }
+
+    public void Submit(Order o)
+    {
+        _log.LogInformation("Submitting order {OrderId} for customer {CustomerId}", o.Id, o.CustomerId);
+        try
+        {
+            // ...
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Failed to submit order {OrderId}", o.Id);
+            throw;
+        }
+    }
+}
+\`\`\`
+
+The \`<T>\` is **only** used as a category string ("OrderService" in this case). You can filter by category in config.
+
+## Six levels (low → high)
+
+| Level | When |
+|---|---|
+| \`Trace\` | Very chatty, tracing internal flow |
+| \`Debug\` | Diagnostic info during development |
+| \`Information\` | Normal operations (request started, order placed) |
+| \`Warning\` | Unexpected but recoverable (slow query, retry) |
+| \`Error\` | A specific operation failed |
+| \`Critical\` | The whole app may be at risk (DB down) |
+
+Setting "minimum level = Information" means Trace/Debug are dropped before formatting (cheap).
+
+## Configure levels in appsettings.json
+
+\`\`\`json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning",
+      "MyApp.Internal": "Debug"
+    }
+  }
+}
+\`\`\`
+
+You can dial verbosity per category — quiet down the framework, crank up your own code.`,
+    },
+    {
+      id: 'l-lg-2',
+      title: 'Structured logging',
+      type: 'theory',
+      xp: 15,
+      theory: `# Structured logging
+
+This is the most important habit to learn:
+
+\`\`\`csharp
+// BAD — unstructured
+_log.LogInformation($"User {userId} placed order {orderId}");
+
+// GOOD — structured
+_log.LogInformation("User {UserId} placed order {OrderId}", userId, orderId);
+\`\`\`
+
+Both look the same in console output. The difference is in **searchable log stores** (Seq, Elasticsearch, Datadog, Splunk).
+
+The structured form preserves \`UserId\` and \`OrderId\` as distinct fields — you can query "all logs where UserId = 42" without regex.
+
+The unstructured form just produces a string — searching it requires \`grep\`-style tricks.
+
+## Property names
+
+Use **PascalCase** to match the convention. The placeholder name in the template becomes the property name.
+
+\`\`\`csharp
+_log.LogInformation("Processed {Count} items in {ElapsedMs}ms", n, sw.ElapsedMilliseconds);
+\`\`\`
+
+## Capturing exceptions
+
+\`\`\`csharp
+try { ... }
+catch (Exception ex)
+{
+    _log.LogError(ex, "Sync failed for tenant {TenantId}", tenantId);
+}
+\`\`\`
+
+The exception goes to the **first** parameter; the message follows. Providers serialize the full stack trace.
+
+## Scopes
+
+Group related log lines with a scope:
+
+\`\`\`csharp
+using (_log.BeginScope("RequestId={RequestId}", request.Id))
+{
+    _log.LogInformation("Processing");
+    DoWork();
+    _log.LogInformation("Done");
+}
+\`\`\`
+
+Every line inside the using block carries \`RequestId\` automatically. Aggregators index it as a property.
+
+## High-perf logging
+
+For hot loops, the compiler can generate zero-allocation log methods via the \`LoggerMessage\` source generator:
+
+\`\`\`csharp
+[LoggerMessage(EventId = 1001, Level = LogLevel.Information,
+    Message = "Got {Count} rows from {Table}")]
+public static partial void GotRows(this ILogger log, int count, string table);
+\`\`\`
+
+The method does no boxing or string formatting unless a provider is actually consuming that level. Worth it in code that runs millions of times per second.`,
+    },
+    {
+      id: 'l-lg-3',
+      title: 'Logging Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Why use `ILogger<T>` instead of `ILogger`?',
+          options: [
+            'Performance',
+            'The generic parameter sets the log category, used for per-class filtering',
+            'Required for DI to work',
+            'Stylistic only',
+          ],
+          correctIndex: 1,
+          explanation: 'The class name becomes the category string. You can configure log levels per category in appsettings.',
+        },
+        {
+          question: 'What\'s the structured-logging difference?',
+          options: [
+            'No difference — both produce the same output',
+            'Structured preserves placeholder values as named fields, queryable in log stores',
+            'Structured is JSON-only',
+            'Structured uses less memory',
+          ],
+          correctIndex: 1,
+          explanation: 'Structured logging keeps the variables as separate fields. Stores like Seq/Elasticsearch index them so you can query "where UserId=42".',
+        },
+        {
+          question: 'Where does the Exception go in `_log.LogError(ex, "...", arg)`?',
+          options: [
+            'It must be in the message template',
+            'First positional parameter, before the message',
+            'Last positional parameter',
+            'It can\'t be logged this way',
+          ],
+          correctIndex: 1,
+          explanation: 'Convention: exception is the first arg, then template, then template arguments.',
+        },
+        {
+          question: 'What does `_log.BeginScope(...)` do?',
+          options: [
+            'Starts a transaction',
+            'Adds context properties to every log line written within the using block',
+            'Suppresses logs',
+            'Increases log level',
+          ],
+          correctIndex: 1,
+          explanation: 'Scopes attach contextual properties (RequestId, UserId, etc.) to every log inside, helping you correlate related events.',
+        },
+      ],
+    },
+  ],
+};
+
+const chDI: Chapter = {
+  id: 'ch-di',
+  title: 'Dependency Injection',
+  description: 'Wire types together at the edge',
+  icon: '🧩',
+  lessons: [
+    {
+      id: 'l-di-1',
+      title: 'Why DI?',
+      type: 'theory',
+      xp: 20,
+      theory: `# Dependency Injection
+
+A class **depends on** the things it uses. DI is the practice of having those dependencies handed to you (usually via constructor parameters) rather than constructing them yourself.
+
+## The without-DI problem
+
+\`\`\`csharp
+public class OrderService
+{
+    private readonly EmailClient _email = new EmailClient();
+    private readonly Database _db = new Database("server=...;");
+
+    public void Submit(Order o)
+    {
+        _db.Save(o);
+        _email.Send(o.Customer, "Thanks");
+    }
+}
+\`\`\`
+
+Pain points:
+- Cannot test without a real DB and a real SMTP server
+- The connection string is hardcoded — different env = code change
+- Every \`new EmailClient()\` is a separate connection — wasteful
+
+## With DI
+
+\`\`\`csharp
+public class OrderService
+{
+    private readonly IEmailClient _email;
+    private readonly IDatabase _db;
+
+    public OrderService(IEmailClient email, IDatabase db)
+    {
+        _email = email;
+        _db = db;
+    }
+
+    public void Submit(Order o)
+    {
+        _db.Save(o);
+        _email.Send(o.Customer, "Thanks");
+    }
+}
+\`\`\`
+
+Now:
+- Tests pass mocks: \`new OrderService(new FakeEmail(), new FakeDb())\`
+- Production wires real implementations through a **container**
+- The class doesn't know — and shouldn't — where those dependencies came from
+
+## The container
+
+In .NET the standard container is \`Microsoft.Extensions.DependencyInjection\` (MSDI). You register types up front; the container instantiates them on demand and injects them as needed.
+
+\`\`\`csharp
+var services = new ServiceCollection();
+services.AddSingleton<IEmailClient, SmtpEmailClient>();
+services.AddScoped<IDatabase, SqlDatabase>();
+services.AddTransient<OrderService>();
+
+var provider = services.BuildServiceProvider();
+var orders = provider.GetRequiredService<OrderService>();
+orders.Submit(o);
+\`\`\`
+
+The container saw that \`OrderService\` needs \`IEmailClient\` and \`IDatabase\`, fetched them, and constructed the service.`,
+    },
+    {
+      id: 'l-di-2',
+      title: 'Lifetimes',
+      type: 'theory',
+      xp: 20,
+      theory: `# Service Lifetimes
+
+When you register a service you choose how long an instance lives.
+
+## Singleton
+
+One instance for the entire app, shared across all callers.
+
+\`\`\`csharp
+services.AddSingleton<IClock, SystemClock>();
+\`\`\`
+
+Use for: stateless helpers, expensive-to-construct services, caches, configuration objects.
+**Don't:** put per-request state in a singleton — it leaks between users.
+
+## Scoped
+
+One instance per **scope**. In an ASP.NET Core app, the scope is **the HTTP request** — every dependency in a single request gets the same instance.
+
+\`\`\`csharp
+services.AddScoped<IDatabase, SqlDatabase>();
+\`\`\`
+
+Use for: anything that should be consistent within a request — DB context, current user info, unit of work.
+
+## Transient
+
+A fresh instance every time someone asks.
+
+\`\`\`csharp
+services.AddTransient<IEmailFormatter, HtmlEmailFormatter>();
+\`\`\`
+
+Use for: lightweight stateless helpers where you don't care about reuse.
+
+## The "captive dependency" trap
+
+A **longer-lived** service must NOT inject a **shorter-lived** one:
+
+\`\`\`csharp
+// BAD
+services.AddSingleton<UserCache>();    // singleton
+services.AddScoped<IDatabase, SqlDb>(); // scoped
+
+// UserCache.ctor takes IDatabase — captures the FIRST request's instance forever!
+\`\`\`
+
+The runtime warns about this in dev. The fix: depend on \`IServiceScopeFactory\` and create a scope when you need one inside a singleton.
+
+## Cheat sheet
+
+| Need | Use |
+|---|---|
+| App-wide stateless helper or config | Singleton |
+| Per-request consistency (DB context, current user) | Scoped |
+| Anything else, especially short-lived | Transient |`,
+    },
+    {
+      id: 'l-di-3',
+      title: 'Constructor injection patterns',
+      type: 'theory',
+      xp: 15,
+      theory: `# Constructor injection — the right way
+
+The .NET DI norm is **constructor injection**: dependencies arrive as ctor params, get assigned to readonly fields, and stay immutable.
+
+\`\`\`csharp
+public class OrderService
+{
+    private readonly IEmailClient _email;
+    private readonly IDatabase _db;
+    private readonly ILogger<OrderService> _log;
+
+    public OrderService(IEmailClient email, IDatabase db, ILogger<OrderService> log)
+    {
+        _email = email;
+        _db = db;
+        _log = log;
+    }
+}
+\`\`\`
+
+Benefits:
+- Dependencies are **explicit** in the ctor signature — no hidden requirements
+- The class can't exist in a half-initialized state
+- Tests construct with whatever stand-ins they want
+
+## What NOT to do
+
+- **Service locator pattern** — calling \`provider.GetService<X>()\` from inside business code. Hides dependencies, fights the container.
+- **Property injection** — public settable properties that the container fills. Only use when you genuinely have an optional dependency that can change at runtime.
+- **Many ctors** — pick one. Multi-ctor types confuse the container.
+
+## Too many dependencies
+
+If your ctor has 10 dependencies, the class is doing too much. Split it.
+
+A common refactor: extract a "facade" or "orchestrator" class that depends on a couple of focused services, each of which has 1-3 dependencies.
+
+## DI vs the New keyword
+
+You don't have to put **everything** in the container. Plain data structures (\`Order\`, \`Customer\`, \`PriceQuote\`) are still constructed with \`new\`. Only **services** — things with behavior and dependencies — belong in DI.
+
+## Common registration helpers
+
+\`\`\`csharp
+services.AddHttpClient();                       // pre-configured HttpClient factory
+services.AddDbContext<AppDb>();                 // EF Core context
+services.AddOptions<MailOptions>();             // strongly-typed options
+services.AddHostedService<BackgroundWorker>();  // long-running service
+services.AddMemoryCache();
+services.AddAuthentication();
+\`\`\`
+
+Each library exposes its own AddXxx extensions to make registration discoverable.`,
+    },
+    {
+      id: 'l-di-4',
+      title: 'A registration cheat sheet',
+      type: 'theory',
+      xp: 15,
+      theory: `# Registration patterns
+
+A reference of the registration shapes you'll see in real codebases.
+
+## Bind interface to implementation
+
+\`\`\`csharp
+services.AddScoped<IDatabase, SqlDatabase>();
+\`\`\`
+
+When someone asks for \`IDatabase\`, get a \`SqlDatabase\`. Per-scope.
+
+## Bind a concrete type (no interface)
+
+\`\`\`csharp
+services.AddScoped<OrderService>();
+\`\`\`
+
+Sometimes you don't bother with an interface. The container resolves the concrete type directly.
+
+## Lambda factory
+
+When construction needs custom logic:
+
+\`\`\`csharp
+services.AddSingleton<IClock>(_ => new SystemClock(TimeZoneInfo.Utc));
+services.AddScoped<IDb>(sp =>
+{
+    var conn = sp.GetRequiredService<IConfiguration>().GetConnectionString("Default");
+    return new SqlDb(conn);
+});
+\`\`\`
+
+The lambda receives \`IServiceProvider\` so you can pull other services.
+
+## Existing instance
+
+\`\`\`csharp
+services.AddSingleton<IClock>(SystemClock.Instance);
+\`\`\`
+
+When you already have the object — handy for sharing across an app and for tests.
+
+## Multiple impls of the same interface
+
+\`\`\`csharp
+services.AddScoped<INotifier, EmailNotifier>();
+services.AddScoped<INotifier, SmsNotifier>();
+services.AddScoped<INotifier, PushNotifier>();
+\`\`\`
+
+Then inject \`IEnumerable<INotifier>\` to get all three.
+
+## Decorator pattern (manual)
+
+The built-in container doesn't support decorators directly. Reach for **Scrutor** (3rd party):
+
+\`\`\`csharp
+services.AddScoped<IDatabase, SqlDatabase>();
+services.Decorate<IDatabase, CachingDatabase>();   // wraps the registered impl
+\`\`\`
+
+## TryAdd vs Add
+
+\`TryAddSingleton\` only registers if no other registration for that interface exists. Useful when writing libraries — you let the consumer override your default.
+
+\`\`\`csharp
+services.TryAddSingleton<IClock, SystemClock>();
+\`\`\``,
+    },
+    {
+      id: 'l-di-5',
+      title: 'DI Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What\'s the main benefit of injecting dependencies via the constructor instead of `new`-ing them?',
+          options: [
+            'Faster startup',
+            'Tests can pass mocks; production wiring is centralized',
+            'Less code',
+            'Required by the runtime',
+          ],
+          correctIndex: 1,
+          explanation: 'DI lets the class declare what it needs without dictating where it comes from. The composition root decides — and tests can pass anything.',
+        },
+        {
+          question: 'Which lifetime gives one instance per HTTP request in ASP.NET Core?',
+          options: ['Singleton', 'Scoped', 'Transient', 'Per-thread'],
+          correctIndex: 1,
+          explanation: 'Scoped is bound to the request scope in web. Outside of web, scopes are manual via IServiceScopeFactory.',
+        },
+        {
+          question: 'A singleton injects a scoped service. What\'s wrong?',
+          options: [
+            'Nothing — that\'s fine',
+            'Captive dependency — the singleton holds the first scoped instance forever',
+            'Compile error',
+            'Performance',
+          ],
+          correctIndex: 1,
+          explanation: 'The singleton outlives every scope. Whichever scoped instance was around when the singleton was constructed gets captured permanently.',
+        },
+        {
+          question: 'Which of these would NOT typically be in DI?',
+          options: [
+            'A logger',
+            'A database service',
+            'An Order data class',
+            'A mail sender',
+          ],
+          correctIndex: 2,
+          explanation: 'Plain data classes (POCOs / DTOs) are constructed with new where needed. Services — anything with behavior and dependencies — belong in the container.',
+        },
+      ],
+    },
+  ],
+};
+
+const chAspNet: Chapter = {
+  id: 'ch-aspnet',
+  title: 'ASP.NET Core Tour',
+  description: 'Building web apps and APIs',
+  icon: '🌐',
+  lessons: [
+    {
+      id: 'l-aspn-1',
+      title: 'What ASP.NET Core is',
+      type: 'theory',
+      xp: 20,
+      theory: `# ASP.NET Core
+
+ASP.NET Core is Microsoft's web framework: HTTP server, routing, middleware, content negotiation, all on top of the same Generic Host you saw earlier.
+
+## Three flavors of HTTP app
+
+| Style | What you build | When |
+|---|---|---|
+| **Minimal APIs** | Tiny endpoint registrations in \`Program.cs\` | Microservices, JSON APIs, Lambda-style functions |
+| **MVC** | Controllers + Views (Razor) | Server-rendered HTML apps with structured codebases |
+| **Razor Pages** | Page-based, Model + cshtml | Form-heavy apps; simpler than MVC for CRUD |
+
+You can mix all three in one project.
+
+## The minimal API
+
+\`\`\`csharp
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddDbContext<AppDb>();
+
+var app = builder.Build();
+
+app.MapGet("/", () => "Hello!");
+app.MapGet("/users/{id:int}", async (int id, AppDb db) =>
+    await db.Users.FindAsync(id) is User u ? Results.Ok(u) : Results.NotFound());
+
+app.MapPost("/users", async (User u, AppDb db) =>
+{
+    db.Users.Add(u);
+    await db.SaveChangesAsync();
+    return Results.Created($"/users/{u.Id}", u);
+});
+
+app.Run();
+\`\`\`
+
+Every line above is real production-quality code. \`Program.cs\` IS the app — no generated cruft.
+
+## Kestrel — the HTTP server
+
+ASP.NET Core ships with **Kestrel**, a high-perf cross-platform HTTP server. It runs in your process. In production you usually:
+
+- Front it with a reverse proxy (Nginx, IIS, Cloud LB) for TLS termination, request smoothing, etc.
+- Or expose Kestrel directly via HTTP/2 + HTTP/3 — modern option, fewer hops
+
+## Middleware pipeline
+
+Every request walks through a configurable list of middleware before hitting your endpoint. Standard middleware: routing, auth, exception handling, response compression, CORS, ...`,
+    },
+    {
+      id: 'l-aspn-2',
+      title: 'Routing & Model Binding',
+      type: 'theory',
+      xp: 20,
+      theory: `# Routing
+
+The router maps an incoming HTTP method + path to your handler.
+
+## Path templates
+
+\`\`\`csharp
+app.MapGet("/users/{id:int}", (int id) => ...);                    // /users/42
+app.MapGet("/posts/{slug}", (string slug) => ...);                 // /posts/hello-world
+app.MapGet("/files/{*path}", (string path) => ...);                // /files/a/b/c.txt
+app.MapGet("/orders", (int? skip, int? take) => ...);              // /orders?skip=10&take=5
+\`\`\`
+
+Constraints (\`:int\`, \`:guid\`, \`:length(3,10)\`) reject mismatches **at routing time**, before your code runs.
+
+## Model binding
+
+Parameters get values from different parts of the request, automatically:
+
+| Source | How it's picked |
+|---|---|
+| **Route values** | If the parameter name matches a route segment |
+| **Query string** | Simple types not in the route |
+| **Body** | Complex types in POST/PUT (deserialized as JSON) |
+| **Headers** | When marked \`[FromHeader]\` |
+| **Form** | \`IFormCollection\` or \`[FromForm]\` |
+
+\`\`\`csharp
+app.MapPost("/orders", (
+    [FromBody] CreateOrderRequest req,        // JSON body
+    [FromQuery] string? source,                // ?source=mobile
+    [FromHeader(Name = "X-Tenant")] string tenant,
+    HttpContext ctx) =>
+{
+    // ...
+});
+\`\`\`
+
+## Validation
+
+For endpoints that take a model, decorate the model with \`DataAnnotations\` attributes:
+
+\`\`\`csharp
+public record CreateOrderRequest(
+    [Required] string CustomerName,
+    [Range(1, 1000)] int Quantity,
+    [EmailAddress] string Email
+);
+\`\`\`
+
+In MVC, the framework validates and you check \`ModelState.IsValid\`. Minimal APIs need a tiny extra setup or a library like FluentValidation. .NET 8 added built-in validation for minimal APIs.
+
+## Returning responses
+
+\`\`\`csharp
+return Results.Ok(user);                       // 200
+return Results.Created($"/users/{id}", user);  // 201
+return Results.NoContent();                    // 204
+return Results.NotFound();                     // 404
+return Results.BadRequest(new { error = "..."}); // 400
+return Results.Problem("Internal trouble");    // 500 + ProblemDetails JSON
+\`\`\`
+
+Returning \`Results.X\` is the recommended pattern in minimal APIs.`,
+    },
+    {
+      id: 'l-aspn-3',
+      title: 'Middleware Pipeline',
+      type: 'theory',
+      xp: 20,
+      theory: `# The middleware pipeline
+
+Every HTTP request travels a chain of **middleware** before reaching your endpoint, then passes through them again on the way back. Each middleware can:
+
+- Inspect / modify the request
+- Hand off to the next middleware
+- Short-circuit and write a response itself
+- Inspect / modify the response on the way out
+
+## Order matters
+
+\`\`\`csharp
+var app = builder.Build();
+
+app.UseExceptionHandler("/error");      // catches throws downstream
+app.UseHttpsRedirection();
+app.UseStaticFiles();                   // serve wwwroot/
+app.UseRouting();
+app.UseAuthentication();                // who is the caller?
+app.UseAuthorization();                 // are they allowed?
+app.UseEndpoints(e => e.MapControllers());
+
+app.Run();
+\`\`\`
+
+Move \`UseAuthentication\` after \`UseAuthorization\` and you've broken auth — Authorization runs against an empty user.
+
+## Common built-in middleware
+
+| Middleware | Job |
+|---|---|
+| \`UseExceptionHandler\` | Convert unhandled throws to HTTP error responses |
+| \`UseStaticFiles\` | Serve files from \`wwwroot/\` directly |
+| \`UseRouting\` / \`UseEndpoints\` | Match requests to routes |
+| \`UseAuthentication\` | Identify the user (cookies, JWT, ...) |
+| \`UseAuthorization\` | Enforce policies |
+| \`UseCors\` | Cross-origin headers |
+| \`UseRateLimiter\` | Throttle requests (.NET 7+) |
+| \`UseResponseCompression\` | Gzip/Brotli responses |
+| \`UseHsts\` | HTTPS enforcement headers |
+
+## Writing your own
+
+\`\`\`csharp
+app.Use(async (ctx, next) =>
+{
+    var sw = Stopwatch.StartNew();
+    await next();                                  // call downstream
+    sw.Stop();
+    ctx.Response.Headers["X-Elapsed-Ms"] = sw.ElapsedMilliseconds.ToString();
+});
+\`\`\`
+
+This is a **request timer** middleware. Add it before \`UseEndpoints\` and every request gets the header.
+
+## Class-based middleware
+
+For non-trivial logic, extract a class:
+
+\`\`\`csharp
+public class CorrelationIdMiddleware
+{
+    private readonly RequestDelegate _next;
+    public CorrelationIdMiddleware(RequestDelegate next) => _next = next;
+
+    public async Task InvokeAsync(HttpContext ctx)
+    {
+        var id = ctx.Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? Guid.NewGuid().ToString();
+        ctx.Response.Headers["X-Correlation-Id"] = id;
+        await _next(ctx);
+    }
+}
+
+// register
+app.UseMiddleware<CorrelationIdMiddleware>();
+\`\`\``,
+    },
+    {
+      id: 'l-aspn-4',
+      title: 'MVC & Razor Pages',
+      type: 'theory',
+      xp: 15,
+      theory: `# MVC
+
+For server-rendered HTML the long-standing pattern is **MVC**: Models (data), Views (Razor templates), Controllers (request handlers).
+
+\`\`\`csharp
+public class HomeController : Controller
+{
+    public IActionResult Index()
+    {
+        var vm = new HomeViewModel { Greeting = "Hello!" };
+        return View(vm);     // renders Views/Home/Index.cshtml
+    }
+}
+\`\`\`
+
+\`\`\`razor
+@model HomeViewModel
+<h1>@Model.Greeting</h1>
+\`\`\`
+
+Routes can be conventional (\`{controller}/{action}/{id?}\`) or attribute-driven (\`[Route("api/[controller]")]\`).
+
+## Razor Pages
+
+A simpler alternative for page-based apps. Each page is a folder of \`Page.cshtml\` + \`Page.cshtml.cs\`:
+
+\`\`\`csharp
+public class IndexModel : PageModel
+{
+    public string Greeting { get; set; } = "";
+
+    public void OnGet()
+    {
+        Greeting = "Hello!";
+    }
+
+    public IActionResult OnPost(string name)
+    {
+        Greeting = $"Hello, {name}!";
+        return Page();
+    }
+}
+\`\`\`
+
+\`\`\`razor
+@page
+@model IndexModel
+<h1>@Model.Greeting</h1>
+<form method="post">
+    <input name="name" />
+    <button>Say hi</button>
+</form>
+\`\`\`
+
+Less ceremony than MVC for form-heavy apps; the page IS the URL.
+
+## When to use what
+
+| Want | Use |
+|---|---|
+| JSON API, microservice | Minimal APIs |
+| Server-rendered HTML, multi-page app | MVC or Razor Pages |
+| Simple page-based site | Razor Pages |
+| Big team, lots of structure | MVC |
+| Tiny endpoint, AOT-friendly | Minimal APIs |
+
+There is **no wrong answer** — they all share routing, model binding, and the middleware pipeline.`,
+    },
+    {
+      id: 'l-aspn-5',
+      title: 'EF Core in 60 seconds',
+      type: 'theory',
+      xp: 15,
+      theory: `# EF Core (a tour)
+
+**Entity Framework Core** is .NET's official ORM (Object-Relational Mapper). You write C# classes; EF generates SQL, manages migrations, and tracks changes.
+
+## DbContext
+
+The central object. Lifetime = one **unit of work** (typically one HTTP request).
+
+\`\`\`csharp
+public class AppDb : DbContext
+{
+    public DbSet<User> Users => Set<User>();
+    public DbSet<Order> Orders => Set<Order>();
+
+    protected override void OnConfiguring(DbContextOptionsBuilder o)
+        => o.UseSqlServer(_connectionString);
+}
+\`\`\`
+
+Or via DI:
+
+\`\`\`csharp
+builder.Services.AddDbContext<AppDb>(o =>
+    o.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
+\`\`\`
+
+## Basic operations
+
+\`\`\`csharp
+// Read
+var alice = await db.Users.FirstAsync(u => u.Email == "alice@example.com");
+var top = await db.Orders.Where(o => o.Total > 100).OrderByDescending(o => o.Date).Take(10).ToListAsync();
+
+// Insert
+db.Users.Add(new User { Name = "Bob" });
+await db.SaveChangesAsync();
+
+// Update — change-tracking + SaveChanges
+alice.Name = "Alice Smith";
+await db.SaveChangesAsync();
+
+// Delete
+db.Users.Remove(alice);
+await db.SaveChangesAsync();
+\`\`\`
+
+EF builds the SQL from your LINQ. Inspect with \`ToQueryString()\` to see exactly what's being executed.
+
+## Migrations
+
+Schema changes are tracked as code:
+
+\`\`\`bash
+dotnet ef migrations add AddPhoneNumber
+dotnet ef database update
+\`\`\`
+
+A timestamped \`.cs\` file lands in your \`Migrations/\` folder. Commit it. Other devs run \`database update\` and their schema catches up.
+
+## AsNoTracking
+
+For read-only queries, opt out of change tracking:
+
+\`\`\`csharp
+var users = await db.Users.AsNoTracking().Where(...).ToListAsync();
+\`\`\`
+
+Faster — and avoids retaining objects unnecessarily.
+
+## Watch out for
+
+- **N+1 queries** — accidentally pulling 1000 children with 1 query per parent. Use \`.Include(x => x.Orders)\` to project the join.
+- **Tracking large reads** — kills memory; \`AsNoTracking\` for reports
+- **Lazy loading** — off by default in EF Core; can be enabled but causes surprise queries
+
+EF Core deserves its own dedicated study. This is the 60-second tour — when you actually build with EF you'll spend serious time understanding the change tracker, query translation, and migrations.`,
+    },
+    {
+      id: 'l-aspn-6',
+      title: 'ASP.NET Core Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Why does middleware order matter?',
+          options: [
+            'It doesn\'t — they\'re commutative',
+            'Each middleware sees the request before the next one and the response after; wrong order can break auth, logging, etc.',
+            'Performance only',
+            'Only matters in production',
+          ],
+          correctIndex: 1,
+          explanation: 'A request walks the chain top-down to your endpoint, then back up. UseAuthentication BEFORE UseAuthorization is required so authz can read the authenticated user.',
+        },
+        {
+          question: 'What does the constraint `{id:int}` do in `MapGet("/users/{id:int}")`?',
+          options: [
+            'Names the parameter `int`',
+            'Rejects requests where `id` isn\'t an integer — happens before your code',
+            'Makes the route optional',
+            'Forces id to be 32 bits',
+          ],
+          correctIndex: 1,
+          explanation: 'Route constraints filter incoming requests at routing time. /users/abc returns 404 without invoking your handler.',
+        },
+        {
+          question: 'What lifetime does a DbContext usually get?',
+          options: ['Singleton', 'Scoped (per request)', 'Transient', 'Static field'],
+          correctIndex: 1,
+          explanation: 'DbContext represents a unit of work and is not thread-safe. Scoped == one per request is the standard in ASP.NET Core.',
+        },
+        {
+          question: 'Why use `AsNoTracking()` for read-only EF queries?',
+          options: [
+            'To enforce read-only at the DB level',
+            'To skip change-tracking — faster and uses less memory',
+            'It\'s required for async queries',
+            'It\'s deprecated, don\'t use it',
+          ],
+          correctIndex: 1,
+          explanation: 'Change-tracking maintains snapshots of every retrieved entity. AsNoTracking skips that work — cheaper for reports and listing pages.',
+        },
+        {
+          question: 'Which is the most lightweight ASP.NET Core style for a JSON API?',
+          options: ['MVC controllers', 'Razor Pages', 'Minimal APIs', 'gRPC'],
+          correctIndex: 2,
+          explanation: 'Minimal APIs are designed for terse JSON endpoints with no controller class boilerplate. MVC is heavier and shines for big teams or HTML rendering.',
+        },
+      ],
+    },
+  ],
+};
+
 // __END_CHAPTERS__
 
 export const csharpCourse: Course = {
@@ -7564,5 +8802,9 @@ export const csharpCourse: Course = {
     chFileIO,
     ch13Milestone,
     chTesting,
+    chConfig,
+    chLogging,
+    chDI,
+    chAspNet,
   ],
 };
