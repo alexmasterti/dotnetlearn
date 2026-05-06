@@ -1,40 +1,48 @@
 /**
- * C# tracer: rewrites user code to emit `__TRACE__:` lines that we parse client-side
- * to render a step-by-step variable timeline.
+ * C# tracer: instruments user code so that after running we can replay execution
+ * line-by-line. Provides "time-travel debugging" — the program runs once, every
+ * line and variable change is captured, the UI lets you step / set breakpoints /
+ * continue across the recorded frames.
  *
- * No real debugger protocol - we inject `__Tracer.Mark(line, name, value)` calls
- * after every recognizable assignment/declaration/inc/dec. Each Mark prints
- * directly to stdout, so the trace is captured even if user code throws or returns.
+ * Two kinds of trace markers:
+ *   __TRACE__:<step>|<line>|<varName>|<value>     → variable update
+ *   __TRACE__:<step>|<line>|@@POS@@|              → "we just finished line N"
  *
- * Strategy:
- *   1) Variable declarations:   `int x = 5;`     -> + emit (line, "x", x)
- *   2) Compound assignments:    `x += 1;`        -> + emit (line, "x", x)
- *   3) Plain assignments:       `x = x * 2;`     -> + emit (line, "x", x)
- *   4) Increment/decrement:     `i++;`  `--n;`   -> + emit (line, name, name)
- *
- * Limitations:
- *  - Multi-variable declarations like `int a = 1, b = 2;` are not split (we trace `a` only)
- *  - Skips `for(...)` headers - those are tracked via the loop body's assignments
- *  - Only instruments inside method bodies (brace depth >= 2)
+ * Position markers anchor frames (one frame = one executed line).
  */
 
 const TRACE_MARKER = '__TRACE__:';
-const MAX_TRACE_PER_RUN = 500;
+const POS_MARKER = '@@POS@@';
+const MAX_TRACE_PER_RUN = 1500;
 
 const PRIMITIVE_TYPES = new Set([
   'int', 'long', 'short', 'byte', 'sbyte', 'uint', 'ulong', 'ushort',
   'float', 'double', 'decimal', 'bool', 'char', 'string', 'var',
 ]);
 
-export interface TraceEntry {
+const TYPE_DECL_RE = new RegExp(
+  '^\\s*(?:int|long|short|byte|sbyte|uint|ulong|ushort|float|double|decimal|bool|char|string|var)(?:\\[\\])?\\s+([A-Za-z_]\\w*)\\s*=\\s*[^;]+;\\s*$',
+);
+const COMPOUND_RE = /^\s*([A-Za-z_]\w*)\s*(?:\+|-|\*|\/|%|&|\||\^)=\s*[^;]+;\s*$/;
+const ASSIGN_RE = /^\s*([A-Za-z_]\w*)\s*=\s*[^=;][^;]*;\s*$/;
+const INC_DEC_RE = /^\s*(?:\+\+|--)?([A-Za-z_]\w*)(?:\+\+|--)?\s*;\s*$/;
+
+export interface TraceVariable {
+  value: string;
+  line: number;
+  step: number;
+}
+
+/** A single frame in the recorded execution — "paused after line N". */
+export interface TraceFrame {
   step: number;
   line: number;
-  name: string;
-  value: string;
+  /** Snapshot of every variable known at this frame, keyed by name. */
+  variables: Map<string, TraceVariable>;
 }
 
 export interface ParsedTrace {
-  entries: TraceEntry[];
+  frames: TraceFrame[];
   cleanOutput: string;
   truncated: boolean;
 }
@@ -61,37 +69,39 @@ export function instrumentCSharp(source: string): string {
 
     if (depth < 2) continue;
     if (/__Tracer\./.test(raw)) continue;
-    if (raw.trim().startsWith('//')) continue;
-    // Skip for-loop headers (they have multiple ; on one line)
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith('//')) continue;
+    // Skip for-loop headers (multiple ; in one line); skip pure braces / control words
     if (/^\s*for\s*\(/.test(code)) continue;
+    if (trimmed === '{' || trimmed === '}' || trimmed === '{}') continue;
+    if (/^\s*(?:if|else|while|do|switch|case|default|return|break|continue|try|catch|finally)\b/.test(trimmed) && !/;\s*$/.test(trimmed)) {
+      // Control-flow header without trailing `;` — don't emit a position here
+      continue;
+    }
 
-    // Declaration: int x = ...; / var foo = ...;
-    const decl = code.match(/^\s*(?:(?:int|long|short|byte|sbyte|uint|ulong|ushort|float|double|decimal|bool|char|string|var)(?:\[\])?)\s+([A-Za-z_]\w*)\s*=\s*[^;]+;\s*$/);
+    // Variable-update Mark calls (existing behavior)
+    const decl = code.match(TYPE_DECL_RE);
     if (decl) {
       out.push(traceCall(lineNo, decl[1]));
-      continue;
+    } else {
+      const compound = code.match(COMPOUND_RE);
+      if (compound) {
+        out.push(traceCall(lineNo, compound[1]));
+      } else {
+        const assign = code.match(ASSIGN_RE);
+        if (assign && !PRIMITIVE_TYPES.has(assign[1])) {
+          out.push(traceCall(lineNo, assign[1]));
+        } else {
+          const inc = code.match(INC_DEC_RE);
+          if (inc && /\+\+|--/.test(code)) {
+            out.push(traceCall(lineNo, inc[1]));
+          }
+        }
+      }
     }
 
-    // Compound assignment: x += 1;
-    const compound = code.match(/^\s*([A-Za-z_]\w*)\s*(?:\+|-|\*|\/|%|&|\||\^)=\s*[^;]+;\s*$/);
-    if (compound) {
-      out.push(traceCall(lineNo, compound[1]));
-      continue;
-    }
-
-    // Plain assignment: x = ...;
-    const assign = code.match(/^\s*([A-Za-z_]\w*)\s*=\s*[^=;][^;]*;\s*$/);
-    if (assign && !PRIMITIVE_TYPES.has(assign[1])) {
-      out.push(traceCall(lineNo, assign[1]));
-      continue;
-    }
-
-    // Increment/decrement: x++; --y;
-    const inc = code.match(/^\s*(?:\+\+|--)?([A-Za-z_]\w*)(?:\+\+|--)?\s*;\s*$/);
-    if (inc && /\+\+|--/.test(code)) {
-      out.push(traceCall(lineNo, inc[1]));
-      continue;
-    }
+    // Always emit a position marker after the line — anchors a frame
+    out.push(`        __Tracer.Pos(${lineNo});`);
   }
 
   return out.join('\n') + '\n' + TRACER_FOOTER;
@@ -113,6 +123,13 @@ internal static class __Tracer
         _step++;
         System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + name + "|" + Format((object)value));
         return value;
+    }
+    public static void Pos(int line)
+    {
+        if (_count >= ${MAX_TRACE_PER_RUN}) return;
+        _count++;
+        _step++;
+        System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|${POS_MARKER}|");
     }
     static string Format(object v)
     {
@@ -188,28 +205,37 @@ function stripStringsAndComments(
 
 export function parseTraceOutput(rawStdout: string): ParsedTrace {
   const lines = rawStdout.split('\n');
-  const entries: TraceEntry[] = [];
   const clean: string[] = [];
+  const frames: TraceFrame[] = [];
+  const liveVars = new Map<string, TraceVariable>();
   let truncated = false;
+
   for (const ln of lines) {
     if (ln.startsWith(TRACE_MARKER)) {
       const body = ln.slice(TRACE_MARKER.length);
       const parts = body.split('|');
       if (parts.length >= 4) {
-        entries.push({
-          step: parseInt(parts[0], 10),
-          line: parseInt(parts[1], 10),
-          name: parts[2],
-          value: parts.slice(3).join('|'),
-        });
+        const step = parseInt(parts[0], 10);
+        const line = parseInt(parts[1], 10);
+        const name = parts[2];
+        const rawValue = parts.slice(3).join('|');
+        if (name === POS_MARKER) {
+          frames.push({
+            step,
+            line,
+            variables: new Map(liveVars), // snapshot
+          });
+        } else {
+          liveVars.set(name, { value: rawValue, line, step });
+        }
       }
     } else {
       clean.push(ln);
     }
   }
-  if (entries.length >= MAX_TRACE_PER_RUN) truncated = true;
+  if (frames.length >= MAX_TRACE_PER_RUN) truncated = true;
   return {
-    entries,
+    frames,
     cleanOutput: clean.join('\n').replace(/\n+$/, ''),
     truncated,
   };
