@@ -3254,6 +3254,49 @@ In a \`.csproj\` you can mark a using as global so it applies to **every** \`.cs
 The SDK already imports common ones (\`System\`, \`System.Linq\`, etc.) under \`<ImplicitUsings>enable</ImplicitUsings>\`.`,
     },
     {
+      id: 'l-am-2-fs',
+      title: 'Practice: file-scoped namespace',
+      type: 'code',
+      xp: 25,
+      codeExercise: {
+        instructions: 'Use a **file-scoped namespace** (`namespace Foo;`) to declare a class `Greeter` in namespace `MyApp` with one static method `Hi()` that returns `"hi from MyApp"`. `Main()` calls it.\n\nExpected output:\n```\nhi from MyApp\n```',
+        starterCode: `using System;
+
+// Add a file-scoped namespace MyApp; and define class Greeter below.
+
+class Program
+{
+    static void Main()
+    {
+        Console.WriteLine(MyApp.Greeter.Hi());
+    }
+}
+`,
+        solution: `using System;
+
+namespace MyApp;
+
+public class Greeter
+{
+    public static string Hi() => "hi from MyApp";
+}
+
+class Program
+{
+    static void Main()
+    {
+        Console.WriteLine(MyApp.Greeter.Hi());
+    }
+}`,
+        tests: [{ expectedOutput: 'hi from MyApp', description: 'File-scoped namespace + static method' }],
+        hints: [
+          '`namespace MyApp;` ends with a semicolon and applies to the rest of the file',
+          'Greeter goes inside MyApp; Program stays outside (no namespace) so Main is the entry',
+          'Or: keep both inside MyApp and let the runtime find Main — both work',
+        ],
+      },
+    },
+    {
       id: 'l-am-3',
       title: 'Access & Namespaces Quiz',
       type: 'quiz',
@@ -5056,6 +5099,61 @@ class Section : IDisposable
       },
     },
     {
+      id: 'l-disp-using-var',
+      title: 'Practice: using var declaration',
+      type: 'code',
+      xp: 25,
+      codeExercise: {
+        instructions: 'C# 8 introduced **using var** declarations: instead of wrapping code in `using (var x = ...) { ... }` blocks, you can write `using var x = ...;` and the variable is disposed when its enclosing scope ends.\n\nRewrite the program below to use the declaration form (no `{ ... }` block). Expected output is unchanged.\n\nExpected output:\n```\nopen: build\nstep 1\nstep 2\nclose: build\n```',
+        starterCode: `using System;
+
+class Section : IDisposable
+{
+    private readonly string _name;
+    public Section(string name) { _name = name; Console.WriteLine("open: " + _name); }
+    public void Dispose() { Console.WriteLine("close: " + _name); }
+}
+
+class Program
+{
+    static void Main()
+    {
+        // Rewrite this as: using var s = new Section("build");  (no parens, no extra braces)
+        using (var s = new Section("build"))
+        {
+            Console.WriteLine("step 1");
+            Console.WriteLine("step 2");
+        }
+    }
+}
+`,
+        solution: `using System;
+
+class Section : IDisposable
+{
+    private readonly string _name;
+    public Section(string name) { _name = name; Console.WriteLine("open: " + _name); }
+    public void Dispose() { Console.WriteLine("close: " + _name); }
+}
+
+class Program
+{
+    static void Main()
+    {
+        using var s = new Section("build");
+        Console.WriteLine("step 1");
+        Console.WriteLine("step 2");
+    }
+}`,
+        tests: [{ expectedOutput: 'open: build\nstep 1\nstep 2\nclose: build', description: 'using-var disposes at end of method scope' }],
+        hints: [
+          'Drop the parens and braces: `using var s = new Section("build");`',
+          'The variable lives until the end of the enclosing block (here, Main)',
+          'Multiple disposables can stack: `using var a = ...; using var b = ...;` — disposed in reverse order',
+        ],
+      },
+    },
+    {
       id: 'l-disp-3',
       title: 'IDisposable Quiz',
       type: 'quiz',
@@ -5694,6 +5792,57 @@ class Program
           'Start both tasks WITHOUT awaiting yet (var t1 = GetGreetingAsync(); var t2 = GetNameAsync();)',
           'Then `await Task.WhenAll(t1, t2);` to wait on both in parallel',
           'After WhenAll, t1.Result and t2.Result are populated',
+        ],
+      },
+    },
+    {
+      id: 'l-async-3-main',
+      title: 'Practice: async Main',
+      type: 'code',
+      xp: 25,
+      codeExercise: {
+        instructions: 'Modern C# allows `static async Task Main()` directly — no `RunAsync().GetAwaiter().GetResult()` bridge needed. Rewrite the program below using async Main.\n\nExpected output:\n```\nstart\ndone\n```',
+        starterCode: `using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task DoWorkAsync()
+    {
+        Console.WriteLine("start");
+        await Task.Delay(20);
+        Console.WriteLine("done");
+    }
+
+    // Convert this Main + bridge to a single async Main
+    static void Main()
+    {
+        DoWorkAsync().GetAwaiter().GetResult();
+    }
+}
+`,
+        solution: `using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task DoWorkAsync()
+    {
+        Console.WriteLine("start");
+        await Task.Delay(20);
+        Console.WriteLine("done");
+    }
+
+    static async Task Main()
+    {
+        await DoWorkAsync();
+    }
+}`,
+        tests: [{ expectedOutput: 'start\ndone', description: 'Async Main flows directly' }],
+        hints: [
+          'Replace `static void Main()` with `static async Task Main()`',
+          'Inside the body, just `await DoWorkAsync();` — no GetAwaiter dance',
+          'The runtime arranges to wait on the returned Task before exiting',
         ],
       },
     },
@@ -11501,6 +11650,1071 @@ The platform isn't going anywhere — come back for refreshers.`,
   ],
 };
 
+const chSourceGen: Chapter = {
+  id: 'ch-source-gen',
+  title: 'Source Generators',
+  description: 'Compile-time codegen — fast, AOT-safe, ubiquitous in modern .NET',
+  icon: '⚙️',
+  lessons: [
+    {
+      id: 'l-srcgen-1',
+      title: 'What source generators are',
+      type: 'theory',
+      xp: 20,
+      theory: `# Source generators
+
+A **source generator** is a Roslyn component that runs during compilation and emits additional C# files based on the code it sees. The compiler then compiles the generated files alongside your own. Different from runtime reflection: the work happens once at build time, the generated code is plain C#, and there's no runtime cost.
+
+## Why .NET teams care
+
+Modern .NET libraries lean on source generators for two reasons:
+
+1. **AOT-friendliness.** Generated code is statically analyzable, so it survives trimming and works under Native AOT (where \`Reflection.Emit\` doesn't).
+2. **Speed.** Replacing reflection with concrete generated methods is often 10-100× faster.
+
+## Common ones in the BCL
+
+- \`System.Text.Json\` source gen — typed serializers per-DTO, no reflection at runtime
+- \`LoggerMessage\` — fast logging methods from \`[LoggerMessage]\` attributes
+- \`GeneratedRegex\` — hand-rolled regex matcher generated at compile time
+- ASP.NET Core route handler source gen for AOT
+- \`LibraryImport\` — replaces \`DllImport\` with a generated marshaller
+
+## Authoring is its own world
+
+Writing a source generator means a separate \`netstandard2.0\` project that references \`Microsoft.CodeAnalysis.CSharp\` and implements \`IIncrementalGenerator\`. Powerful but invasive — almost every team consumes generators rather than writes their own.
+
+## How to consume one
+
+Three pieces:
+1. Reference the generator-providing NuGet (e.g. \`System.Text.Json\` for the JSON one).
+2. Mark your class \`partial\` and apply the generator's attribute.
+3. The compiler emits a partial implementation. Use it like normal code.`,
+    },
+    {
+      id: 'l-srcgen-2',
+      title: 'Practice: GeneratedRegex',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Use the C# 11+ `[GeneratedRegex]` attribute to create a compile-time regex matching simple email-like strings (`<word>@<word>.<word>`). Print whether `"alex@example.com"` matches.\n\nExpected output:\n```\nTrue\n```',
+        starterCode: `using System;
+using System.Text.RegularExpressions;
+
+partial class Program
+{
+    [GeneratedRegex(@"\\w+@\\w+\\.\\w+")]
+    private static partial Regex EmailRegex();
+
+    static void Main()
+    {
+        // Print EmailRegex().IsMatch("alex@example.com")
+    }
+}
+`,
+        solution: `using System;
+using System.Text.RegularExpressions;
+
+partial class Program
+{
+    [GeneratedRegex(@"\\w+@\\w+\\.\\w+")]
+    private static partial Regex EmailRegex();
+
+    static void Main()
+    {
+        Console.WriteLine(EmailRegex().IsMatch("alex@example.com"));
+    }
+}`,
+        tests: [{ expectedOutput: 'True', description: 'Compile-time regex matches a basic email' }],
+        hints: [
+          'The class must be `partial` because the source generator emits the matcher as a partial method',
+          'Call `EmailRegex()` to get the compiled Regex, then `.IsMatch(...)`',
+          'No `new Regex(...)` — the matcher is generated at build time, no runtime compilation',
+        ],
+      },
+    },
+    {
+      id: 'l-srcgen-3',
+      title: 'Source Generators Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'When does a source generator run?',
+          options: ['At runtime, when the type is first used', 'During compilation, before normal codegen', 'Only when the project is published', 'In a background JIT pass'],
+          correctIndex: 1,
+          explanation: 'Generators are compiler plugins. They observe the syntax/semantic model and emit additional .cs files for the compiler to include in the same build.',
+        },
+        {
+          question: 'Why does `[GeneratedRegex]` require a `partial` method?',
+          options: [
+            'Performance',
+            'So the generator can supply the implementation in a generated partial file while you declare the signature',
+            'It does not — `partial` is optional',
+            'Backward compatibility with .NET Framework',
+          ],
+          correctIndex: 1,
+          explanation: 'Source-generated members are emitted into a partial class. You declare the signature; the generator fills in the body in a parallel partial.',
+        },
+        {
+          question: 'Why are source generators a big deal for Native AOT?',
+          options: [
+            'They reduce binary size',
+            'They replace runtime reflection with statically-analyzable code that survives trimming',
+            'They turn off the JIT',
+            'They run faster than the JIT',
+          ],
+          correctIndex: 1,
+          explanation: 'AOT trims away anything not statically referenced. Reflection-based code can break; generated code is direct calls and survives.',
+        },
+        {
+          question: 'Which is NOT a built-in .NET source generator?',
+          options: [
+            '`GeneratedRegex`',
+            '`LoggerMessage`',
+            '`LibraryImport` (P/Invoke replacement)',
+            '`AutoMapperGenerator`',
+          ],
+          correctIndex: 3,
+          explanation: 'AutoMapper is a third-party reflection-based mapper (no source gen by default). The other three ship with the BCL.',
+        },
+      ],
+    },
+  ],
+};
+
+const chAot: Chapter = {
+  id: 'ch-aot',
+  title: 'Native AOT',
+  description: 'Ahead-of-time compilation for fast startup and small images',
+  icon: '🏎️',
+  lessons: [
+    {
+      id: 'l-aot-1',
+      title: 'AOT vs JIT',
+      type: 'theory',
+      xp: 25,
+      theory: `# Native AOT
+
+By default .NET ships **IL** (intermediate language) bytecode in your assembly and the **JIT** (Just-In-Time) compiler turns it into native code as the program runs. **Native AOT** compiles all of that to machine code at publish time. The output is a self-contained native executable, no runtime needed.
+
+## Why use AOT
+
+- **Startup time**: ~10× faster cold start. A web API can be serving requests in under 100ms.
+- **Memory footprint**: smaller working set; the JIT and metadata are gone.
+- **Image size**: trimmed binary, often 10-30MB for a web app vs 100MB+ for self-contained framework deploys.
+- **Container density**: cheaper to run hundreds of small services.
+
+## Why NOT use AOT
+
+It's restrictive. The compiler has to know every type at build time:
+
+- **No \`Reflection.Emit\`** — you can't generate IL at runtime.
+- **Limited reflection** — types not statically referenced get trimmed away. Reflecting over them at runtime returns null or throws.
+- **No dynamic loading of arbitrary assemblies** at runtime (with full reflection).
+- **Generic instantiations must be discoverable** — opening a generic at runtime over a closed type the compiler didn't see can fail.
+- **Some libraries don't work** — anything that pokes at the runtime via reflection probably has trim warnings. The BCL has been heavily refactored to be AOT-friendly; many third-party libs aren't there yet.
+
+## How to publish AOT
+
+In your \`.csproj\`:
+
+\`\`\`xml
+<PropertyGroup>
+  <PublishAot>true</PublishAot>
+</PropertyGroup>
+\`\`\`
+
+Then \`dotnet publish -c Release\`. The compiler emits warnings (\`IL2026\`, \`IL3050\`, etc.) for code that may not survive trimming — fix those before shipping.
+
+## When it makes sense
+
+- **CLIs** — startup matters, and CLIs rarely need runtime reflection
+- **Serverless / FaaS** — pay-per-request loves fast cold start
+- **Containers at scale** — image size + startup × 1000s of replicas adds up
+- **Games / embedded** — predictability over flexibility
+
+## When it doesn't
+
+- Plugin systems that load arbitrary assemblies at runtime
+- ORMs that do heavy reflection (most use \`Reflection.Emit\` for fast property accessors)
+- Codebases with lots of \`dynamic\` or DI graphs that aren't statically known`,
+    },
+    {
+      id: 'l-aot-2',
+      title: 'AOT Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What does Native AOT compile?',
+          options: [
+            'Just the hot paths discovered during execution',
+            'All of your IL to native machine code at publish time',
+            'Only managed code; native libs must be linked separately',
+            'Only the entry assembly',
+          ],
+          correctIndex: 1,
+          explanation: 'AOT means "ahead of time" — the compiler turns IL into native instructions before the program ever runs.',
+        },
+        {
+          question: 'Which is NOT a typical benefit of AOT?',
+          options: ['Faster startup', 'Smaller binaries', 'Higher peak throughput than JIT', 'Less memory at runtime'],
+          correctIndex: 2,
+          explanation: 'AOT often loses to JIT on peak throughput because the JIT has runtime profile data and can re-optimize hot paths.',
+        },
+        {
+          question: 'Why does `Reflection.Emit` fail under AOT?',
+          options: [
+            'No JIT means no facility to compile new IL at runtime',
+            'It is just slower under AOT',
+            'It works fine — AOT and Emit are unrelated',
+            'It requires the GC',
+          ],
+          correctIndex: 0,
+          explanation: 'Emit produces IL and asks the runtime to JIT it. AOT removes the JIT entirely, so there is nothing to compile that IL.',
+        },
+        {
+          question: 'You enable AOT and see warning IL2026 on a method using reflection. What should you do?',
+          options: [
+            'Suppress it — IL warnings are advisory',
+            'Investigate: the trimmer might remove referenced members. Refactor or apply DynamicallyAccessedMembers',
+            'Switch to .NET Framework',
+            'Disable trimming',
+          ],
+          correctIndex: 1,
+          explanation: 'IL2026 says "this code uses reflection in a way the trimmer can\'t analyze." Either rewrite without reflection, use a source generator, or annotate with `DynamicallyAccessedMembers` to keep what reflection needs.',
+        },
+        {
+          question: 'Which scenario is the best fit for AOT?',
+          options: [
+            'A plugin host that loads arbitrary user assemblies at runtime',
+            'A CLI tool where startup time visibly matters',
+            'An ORM heavy in runtime IL emit',
+            'An app with deep reliance on `dynamic`',
+          ],
+          correctIndex: 1,
+          explanation: 'CLIs run, do their work, exit — startup is the whole show. The other scenarios all need runtime flexibility AOT removes.',
+        },
+      ],
+    },
+  ],
+};
+
+const chChannels: Chapter = {
+  id: 'ch-channels',
+  title: 'Channels & Producer/Consumer',
+  description: 'System.Threading.Channels for asynchronous pipelines',
+  icon: '📨',
+  lessons: [
+    {
+      id: 'l-chan-1',
+      title: 'Channels',
+      type: 'theory',
+      xp: 20,
+      theory: `# Channels
+
+\`System.Threading.Channels\` ships in the BCL and gives you a typed, async-friendly producer/consumer queue. Think \`BlockingCollection<T>\` for the async-await world.
+
+## Shape
+
+A \`Channel<T>\` has two ends:
+
+- \`channel.Writer\` — \`WriteAsync\`, \`TryWrite\`, \`Complete\`
+- \`channel.Reader\` — \`ReadAsync\`, \`TryRead\`, \`ReadAllAsync\` (IAsyncEnumerable), \`Completion\` (Task)
+
+Multiple producers and multiple consumers are allowed (configurable for single-reader / single-writer fast paths).
+
+## Bounded vs unbounded
+
+\`\`\`csharp
+// Unbounded: writer never blocks; can run unbounded if consumer falls behind
+var ch = Channel.CreateUnbounded<int>();
+
+// Bounded: writer awaits when capacity is full → backpressure
+var ch = Channel.CreateBounded<int>(capacity: 100);
+\`\`\`
+
+Use **bounded** in production. Unbounded queues are silent failure modes — by the time the queue is huge, you have a problem.
+
+## When the producer is done
+
+\`\`\`csharp
+ch.Writer.Complete();           // signals "no more items"
+\`\`\`
+
+Consumers iterating \`ReadAllAsync\` will exit cleanly. \`Complete(exception)\` propagates an exception into all waiting readers.
+
+## Pattern
+
+\`\`\`csharp
+// producer
+async Task ProduceAsync(ChannelWriter<int> writer)
+{
+    for (int i = 0; i < 100; i++)
+        await writer.WriteAsync(i);
+    writer.Complete();
+}
+
+// consumer
+async Task ConsumeAsync(ChannelReader<int> reader)
+{
+    await foreach (var item in reader.ReadAllAsync())
+        Console.WriteLine(item);
+}
+\`\`\`
+
+## When to use it
+
+- Pipelines: stage A produces, stage B transforms, stage C writes. Each stage is its own task; channels glue them.
+- Decoupling fast incoming work from slow processing (with bounded backpressure)
+- Replacing your own \`BlockingCollection\` + \`Task.Run\` ad-hoc setups
+
+## When to reach for something else
+
+- One-shot event flow → just \`await\` directly
+- Pub/sub broadcast to many subscribers → \`Channel\` is point-to-point; consider \`Rx\` or \`IAsyncEnumerable\` with multiple subscribers
+- Distributed (cross-process / cross-machine) → use a message broker (Azure Service Bus, RabbitMQ, Kafka)`,
+    },
+    {
+      id: 'l-chan-2',
+      title: 'Practice: Producer/Consumer',
+      type: 'code',
+      xp: 35,
+      codeExercise: {
+        instructions: 'Use a bounded `Channel<int>` (capacity 4) to feed numbers 1..5 from a producer task to a consumer task. The consumer prints each number it reads. Producer calls `Complete()` when done.\n\nExpected output (order matters — single producer, single consumer):\n```\n1\n2\n3\n4\n5\n```',
+        starterCode: `using System;
+using System.Threading.Channels;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task Main()
+    {
+        var channel = Channel.CreateBounded<int>(4);
+
+        var producer = Task.Run(async () =>
+        {
+            // Write 1..5 to channel.Writer, then Complete()
+        });
+
+        var consumer = Task.Run(async () =>
+        {
+            // ReadAllAsync and print each item
+        });
+
+        await Task.WhenAll(producer, consumer);
+    }
+}
+`,
+        solution: `using System;
+using System.Threading.Channels;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task Main()
+    {
+        var channel = Channel.CreateBounded<int>(4);
+
+        var producer = Task.Run(async () =>
+        {
+            for (int i = 1; i <= 5; i++)
+                await channel.Writer.WriteAsync(i);
+            channel.Writer.Complete();
+        });
+
+        var consumer = Task.Run(async () =>
+        {
+            await foreach (var item in channel.Reader.ReadAllAsync())
+                Console.WriteLine(item);
+        });
+
+        await Task.WhenAll(producer, consumer);
+    }
+}`,
+        tests: [{ expectedOutput: '1\n2\n3\n4\n5', description: 'Single-producer, single-consumer pipeline' }],
+        hints: [
+          'Producer: `await channel.Writer.WriteAsync(i);` then `channel.Writer.Complete();`',
+          'Consumer: `await foreach (var item in channel.Reader.ReadAllAsync())`',
+          'WhenAll on both tasks so Main waits for the consumer to finish printing',
+        ],
+      },
+    },
+    {
+      id: 'l-chan-3',
+      title: 'Channels Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Why prefer a bounded channel in production?',
+          options: [
+            'They are faster',
+            'Backpressure: the writer awaits when capacity is reached, preventing runaway memory growth',
+            'They guarantee FIFO ordering (unbounded does not)',
+            'Bounded channels are required for AOT',
+          ],
+          correctIndex: 1,
+          explanation: 'Both forms are FIFO. Bounded gives you a circuit breaker — a slow consumer slows the producer instead of letting the queue grow forever.',
+        },
+        {
+          question: 'How does a consumer cleanly exit a Channel loop?',
+          options: [
+            'Read the special token `null`',
+            'The producer calls `Writer.Complete()` and `ReadAllAsync` ends',
+            'It must be cancelled with a CancellationToken',
+            'Channels do not support clean exit',
+          ],
+          correctIndex: 1,
+          explanation: '`Complete()` signals end-of-stream. `ReadAllAsync` enumerates remaining items then completes. `Complete(exception)` instead propagates an error.',
+        },
+        {
+          question: 'Which is NOT a good Channel use case?',
+          options: [
+            'Multi-stage processing pipeline within a single process',
+            'Decoupling burst-y incoming load from slower downstream work',
+            'Broadcasting an event to many independent subscribers',
+            'Bridging an event-driven API to async code',
+          ],
+          correctIndex: 2,
+          explanation: 'Channels are point-to-point — each item is consumed by exactly one reader. For broadcast you want Rx or `IAsyncEnumerable` with subscriber multiplexing.',
+        },
+      ],
+    },
+  ],
+};
+
+const chAnalyzers: Chapter = {
+  id: 'ch-analyzers',
+  title: 'Roslyn Analyzers',
+  description: 'Custom compile-time rules and code fixes',
+  icon: '🔍',
+  lessons: [
+    {
+      id: 'l-ana-1',
+      title: 'What analyzers do',
+      type: 'theory',
+      xp: 20,
+      theory: `# Roslyn analyzers
+
+A **Roslyn analyzer** is a compiler plugin that walks the syntax tree (and semantic model) of every compiled project and reports diagnostics — warnings, errors, infos. The compiler treats them like its own diagnostics: they appear in the IDE, in build output, on CI.
+
+A **code fix** is the optional companion: given a flagged diagnostic, propose a transformation the IDE can apply with one keystroke.
+
+## Anatomy
+
+\`\`\`csharp
+[DiagnosticAnalyzer(LanguageNames.CSharp)]
+public class NoTodoAnalyzer : DiagnosticAnalyzer
+{
+    static readonly DiagnosticDescriptor Rule = new(
+        "MYAPP001",
+        "TODO comment",
+        "TODO comments should be tracked in an issue, not the code",
+        "Hygiene",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics
+        => ImmutableArray.Create(Rule);
+
+    public override void Initialize(AnalysisContext ctx)
+    {
+        ctx.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
+        ctx.EnableConcurrentExecution();
+        ctx.RegisterSyntaxTreeAction(treeCtx =>
+        {
+            foreach (var c in treeCtx.Tree.GetRoot().DescendantTrivia()
+                .Where(t => t.IsKind(SyntaxKind.SingleLineCommentTrivia)))
+            {
+                if (c.ToString().Contains("TODO"))
+                    treeCtx.ReportDiagnostic(
+                        Diagnostic.Create(Rule, c.GetLocation()));
+            }
+        });
+    }
+}
+\`\`\`
+
+## How they ship
+
+An analyzer lives in a \`netstandard2.0\` project that references \`Microsoft.CodeAnalysis.CSharp\`. Package it as NuGet with the \`<Analyzer>\` packaging metadata; consumers reference the package and the analyzer runs in their build.
+
+## Configuration via .editorconfig
+
+Severity is end-user-controllable per-rule:
+
+\`\`\`ini
+[*.cs]
+dotnet_diagnostic.MYAPP001.severity = error
+\`\`\`
+
+So a CI build can promote a warning to an error without touching the analyzer.
+
+## What they're great at
+
+- Style enforcement (forbid \`Console.WriteLine\` in production code, require \`ConfigureAwait(false)\` in libraries)
+- Catching anti-patterns specific to your codebase
+- Migration aids (warn on usage of an old API and offer an auto-fix to the new one)
+- Domain-specific lints (e.g. ASP.NET Core has dozens of built-in analyzers for routing, MVC, signalR)
+
+## What they're not
+
+- Full type-checkers — Roslyn does that already
+- Runtime contracts — analyzers run at compile time only
+- Cross-project flow analysis — limited; designed for per-method or per-file checks
+
+## Built-in analyzers worth turning on
+
+- **NetAnalyzers** (CA0xxx) — included by default in modern SDK; performance and correctness lints
+- **AsyncFixer** / **VSThreading** for async best-practices
+- **StyleCop.Analyzers** for style consistency
+- **ThreadSafety** rules from various packages`,
+    },
+    {
+      id: 'l-ana-2',
+      title: 'Analyzers Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'When does a Roslyn analyzer run?',
+          options: ['At app startup', 'During every compilation, on every keystroke in the IDE', 'Only on CI', 'Only when explicitly invoked'],
+          correctIndex: 1,
+          explanation: 'Analyzers integrate with the compiler. The IDE re-runs them as you type so squiggles appear live.',
+        },
+        {
+          question: 'What does a code fix add to an analyzer?',
+          options: [
+            'Auto-formats the file',
+            'A proposed code transformation the user can apply to address the diagnostic',
+            'A test runner',
+            'Performance counters',
+          ],
+          correctIndex: 1,
+          explanation: 'Code fixes turn "warning: TODO comment" into "...and pressing Alt+Enter rewrites it for you."',
+        },
+        {
+          question: 'How does a downstream consumer adjust a rule\'s severity?',
+          options: [
+            'Modify the analyzer source',
+            'Use `.editorconfig` with `dotnet_diagnostic.RULEID.severity = ...`',
+            'Pass a flag to dotnet build',
+            'Severity is fixed by the analyzer author',
+          ],
+          correctIndex: 1,
+          explanation: '.editorconfig is the standard escape hatch — promote, demote, or silence rules per-folder.',
+        },
+        {
+          question: 'Which is NOT a typical analyzer use case?',
+          options: [
+            'Forbid `Console.WriteLine` in production code',
+            'Require `ConfigureAwait(false)` in library code',
+            'Inject a runtime cache around methods',
+            'Suggest replacing `string.Format` with interpolation',
+          ],
+          correctIndex: 2,
+          explanation: 'Analyzers report diagnostics at compile time. Runtime behavior changes belong to source generators or actual code.',
+        },
+      ],
+    },
+  ],
+};
+
+const chIlEmit: Chapter = {
+  id: 'ch-il-emit',
+  title: 'IL & Reflection.Emit',
+  description: 'Generating types and methods at runtime',
+  icon: '🛠️',
+  lessons: [
+    {
+      id: 'l-ile-1',
+      title: 'IL basics',
+      type: 'theory',
+      xp: 25,
+      theory: `# IL & Reflection.Emit
+
+Every C# assembly contains **IL** — a stack-based instruction set the runtime executes via JIT. Most of the time IL is invisible. \`Reflection.Emit\` lets you create and execute IL **at runtime** without going through the C# compiler.
+
+## A taste of IL
+
+\`\`\`
+ldarg.0      // load arg 0 onto stack
+ldarg.1      // load arg 1
+add          // pop 2, push sum
+ret          // return top of stack
+\`\`\`
+
+That's the entire body of \`int Add(int a, int b) => a + b;\` after compilation. Stack-based, very small, very direct.
+
+## When you'd write IL at runtime
+
+- **Dynamic proxies** — interception, AOP, mocking frameworks (Castle.DynamicProxy, Moq)
+- **ORMs** — Entity Framework historically used Emit to build fast property accessors
+- **Serializers** — pre-AOT-era JSON libs emitted member readers/writers
+- **Expression trees** — \`System.Linq.Expressions\` compiles to IL under the hood
+- **DSLs** — interpreters that generate code from script source
+
+## What replaced it
+
+For most of those uses, **source generators** are now preferred:
+
+- Statically analyzable → AOT-friendly
+- Debuggable (the generated code is real C# you can step through)
+- No "trust me, this is what it does" surprise
+
+\`Reflection.Emit\` is still useful when:
+- The shape isn't known until runtime (genuinely dynamic, e.g. plugin types built from user input)
+- You're writing an interpreter and need the JIT-speed for hot paths
+- Migration of legacy codebases
+
+## DynamicMethod — the lightweight tool
+
+\`DynamicMethod\` creates a single method without a containing type, executes it, then GCs cleanly. Good for hot-path dispatchers:
+
+\`\`\`csharp
+var add = new DynamicMethod("Add", typeof(int), new[] { typeof(int), typeof(int) });
+var il = add.GetILGenerator();
+il.Emit(OpCodes.Ldarg_0);
+il.Emit(OpCodes.Ldarg_1);
+il.Emit(OpCodes.Add);
+il.Emit(OpCodes.Ret);
+var fn = (Func<int, int, int>)add.CreateDelegate(typeof(Func<int, int, int>));
+fn(2, 3); // 5
+\`\`\`
+
+## AssemblyBuilder / TypeBuilder — full power
+
+For "create a real type at runtime" scenarios you go up to \`AssemblyBuilder\` → \`ModuleBuilder\` → \`TypeBuilder\` → \`MethodBuilder\` and emit instructions. More ceremony, more capable.
+
+## Caveats
+
+- Not AOT-safe — there's no JIT to compile your emitted IL.
+- Bug surface area is high — emitting wrong IL can crash the process with no useful error.
+- Performance benefit only matters if the dispatcher is on a real hot path.`,
+    },
+    {
+      id: 'l-ile-2',
+      title: 'Practice: DynamicMethod Add',
+      type: 'code',
+      xp: 35,
+      codeExercise: {
+        instructions: 'Use `DynamicMethod` and `Reflection.Emit` to build a method that adds two ints. Cast it to `Func<int,int,int>` and call it with `(2, 3)`. Print the result.\n\nExpected output:\n```\n5\n```',
+        starterCode: `using System;
+using System.Reflection.Emit;
+
+class Program
+{
+    static void Main()
+    {
+        var dm = new DynamicMethod("Add", typeof(int), new[] { typeof(int), typeof(int) });
+        var il = dm.GetILGenerator();
+        // Emit: ldarg.0, ldarg.1, add, ret
+
+        var fn = (Func<int, int, int>)dm.CreateDelegate(typeof(Func<int, int, int>));
+        Console.WriteLine(fn(2, 3));
+    }
+}
+`,
+        solution: `using System;
+using System.Reflection.Emit;
+
+class Program
+{
+    static void Main()
+    {
+        var dm = new DynamicMethod("Add", typeof(int), new[] { typeof(int), typeof(int) });
+        var il = dm.GetILGenerator();
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Ret);
+
+        var fn = (Func<int, int, int>)dm.CreateDelegate(typeof(Func<int, int, int>));
+        Console.WriteLine(fn(2, 3));
+    }
+}`,
+        tests: [{ expectedOutput: '5', description: 'Emitted method adds 2 + 3' }],
+        hints: [
+          'Four instructions: load arg 0, load arg 1, add, return',
+          '`il.Emit(OpCodes.Ldarg_0);` etc.',
+          'After Emit, `dm.CreateDelegate(...)` returns the runnable delegate',
+        ],
+      },
+    },
+    {
+      id: 'l-ile-3',
+      title: 'IL Emit Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What is IL?',
+          options: [
+            'The native instruction set of the CPU',
+            'A stack-based intermediate language the .NET runtime executes via JIT',
+            'A library for parsing C#',
+            'A markup format for resources',
+          ],
+          correctIndex: 1,
+          explanation: 'IL = Intermediate Language. The C# compiler emits it. The runtime\'s JIT (or AOT compiler) turns it into machine code.',
+        },
+        {
+          question: 'Why doesn\'t `Reflection.Emit` work under Native AOT?',
+          options: [
+            'AOT does not support arrays',
+            'There is no JIT to compile freshly-emitted IL',
+            'AOT removes the BCL',
+            'It works fine under AOT',
+          ],
+          correctIndex: 1,
+          explanation: 'AOT pre-compiles all IL to native at publish time. Emit produces new IL at runtime — there is no compiler to consume it.',
+        },
+        {
+          question: 'Which is the modern, AOT-friendly replacement for most Reflection.Emit use cases?',
+          options: ['Dynamic dispatch', 'Source generators', 'Reflection-only loading', 'Expression compilation'],
+          correctIndex: 1,
+          explanation: 'Source generators do the codegen at build time — AOT-safe, debuggable, fast.',
+        },
+        {
+          question: 'What does `OpCodes.Ldarg_0` do?',
+          options: [
+            'Loads the local variable at index 0',
+            'Pushes the first argument onto the evaluation stack',
+            'Loads zero',
+            'Defines argument 0',
+          ],
+          correctIndex: 1,
+          explanation: 'Ldarg_0 = "load argument 0". For static methods that\'s the first parameter; for instance methods it\'s `this`.',
+        },
+      ],
+    },
+  ],
+};
+
+const chCrypto: Chapter = {
+  id: 'ch-crypto',
+  title: 'Cryptography',
+  description: 'Hashing, encryption, signing — the practical surface',
+  icon: '🔐',
+  lessons: [
+    {
+      id: 'l-cry-1',
+      title: 'Crypto primitives',
+      type: 'theory',
+      xp: 25,
+      theory: `# Cryptography in .NET
+
+Crypto in .NET lives under \`System.Security.Cryptography\`. The four primitives you'll meet most often:
+
+## 1. Hashing (one-way)
+
+Maps any input to a fixed-size digest. Same input → same output, but you cannot reverse it.
+
+\`\`\`csharp
+using var sha = SHA256.Create();
+byte[] digest = sha.ComputeHash(Encoding.UTF8.GetBytes("hello"));
+string hex = Convert.ToHexString(digest);
+\`\`\`
+
+Use cases: file integrity (\`SHA256\`), content-addressable storage. **Not for passwords** — see below.
+
+## 2. HMAC — keyed hashing
+
+Adds a secret key. Same shape as hashing, but two parties with the same key can verify a message wasn't tampered with.
+
+\`\`\`csharp
+using var hmac = new HMACSHA256(key);
+byte[] mac = hmac.ComputeHash(payload);
+\`\`\`
+
+Use cases: API request signing (the AWS SDK does this), webhook verification.
+
+## 3. Symmetric encryption
+
+Same key encrypts and decrypts. Modern choice: **AES-GCM** (authenticated encryption — you also get integrity for free).
+
+\`\`\`csharp
+using var aes = new AesGcm(key, tagSize: 16);
+aes.Encrypt(nonce, plaintext, ciphertext, tag);
+aes.Decrypt(nonce, ciphertext, tag, plaintext); // throws on tamper
+\`\`\`
+
+The **nonce must be unique per encryption with the same key**. Reusing it leaks plaintext bits.
+
+## 4. Asymmetric encryption / signing
+
+Public key encrypts, private key decrypts (or vice versa for signing). Slow → mostly used to bootstrap a symmetric session key. RSA is the workhorse; ECDsa is the modern choice for signing.
+
+\`\`\`csharp
+using var rsa = RSA.Create();
+byte[] sig = rsa.SignData(data, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+\`\`\`
+
+## Passwords are special
+
+\`SHA256(password)\` is **wrong**. Use a deliberately-slow KDF designed for passwords:
+
+- \`Rfc2898DeriveBytes\` (PBKDF2) — built-in, decent
+- \`bcrypt\`, \`scrypt\`, \`Argon2\` (third-party) — preferred where allowed
+
+Always: random salt, high iteration count, store \`{algorithm, iterations, salt, hash}\`.
+
+## ASP.NET Core: Data Protection
+
+For "encrypt this auth cookie / connection string at rest" use cases, the \`Microsoft.AspNetCore.DataProtection\` API hides all of the above behind \`Protect/Unprotect\` and handles key rotation automatically:
+
+\`\`\`csharp
+var protector = provider.CreateProtector("Auth.Cookie");
+string protectedText = protector.Protect("some payload");
+\`\`\`
+
+Use this 90% of the time. Only reach for raw primitives when you need exact control over format / interop with another system.
+
+## Don't roll your own
+
+There's a long, embarrassing history of crypto bugs in homegrown schemes (no IV, IV reuse, no MAC, padding oracles, timing attacks…). Use the BCL primitives. Use \`Microsoft.AspNetCore.DataProtection\` when you can. Read [Cryptographic Right Answers](https://gist.github.com/tqbf/be58d2d39690c3b366ad) before designing anything new.`,
+    },
+    {
+      id: 'l-cry-2',
+      title: 'Practice: SHA256 hash',
+      type: 'code',
+      xp: 30,
+      codeExercise: {
+        instructions: 'Hash the string `"hello"` with SHA256 and print the result as **lowercase hex** (no separators, 64 characters).\n\nExpected output:\n```\n2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824\n```',
+        starterCode: `using System;
+using System.Security.Cryptography;
+using System.Text;
+
+class Program
+{
+    static void Main()
+    {
+        // Hash "hello" with SHA256, print lowercase hex
+    }
+}
+`,
+        solution: `using System;
+using System.Security.Cryptography;
+using System.Text;
+
+class Program
+{
+    static void Main()
+    {
+        byte[] digest = SHA256.HashData(Encoding.UTF8.GetBytes("hello"));
+        Console.WriteLine(Convert.ToHexString(digest).ToLowerInvariant());
+    }
+}`,
+        tests: [{ expectedOutput: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824', description: 'Standard SHA256 of "hello"' }],
+        hints: [
+          '`SHA256.HashData(bytes)` is the modern one-call API (since .NET 5)',
+          '`Encoding.UTF8.GetBytes(s)` converts the string to bytes',
+          '`Convert.ToHexString(bytes)` produces uppercase; lowercase via `.ToLowerInvariant()`',
+        ],
+      },
+    },
+    {
+      id: 'l-cry-3',
+      title: 'Crypto Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'Why is `SHA256(password)` wrong for password storage?',
+          options: [
+            'SHA256 is broken',
+            'It is too fast — attackers brute-force billions of guesses per second per GPU',
+            'It produces too short a digest',
+            'It is not available in .NET',
+          ],
+          correctIndex: 1,
+          explanation: 'Password KDFs (PBKDF2, bcrypt, scrypt, Argon2) are deliberately slow with tunable cost so brute-forcing is expensive.',
+        },
+        {
+          question: 'In AES-GCM, what happens if you reuse a nonce with the same key?',
+          options: [
+            'Nothing — the nonce is just an arbitrary parameter',
+            'Catastrophic — attackers can recover plaintext bits',
+            'You get a slower encrypt',
+            'The MAC fails',
+          ],
+          correctIndex: 1,
+          explanation: 'GCM\'s security relies on never reusing nonce with the same key. Use a counter, random 96-bit value, or generate a fresh key per message.',
+        },
+        {
+          question: 'When should you reach for `Microsoft.AspNetCore.DataProtection` instead of raw primitives?',
+          options: [
+            'Never — always use raw primitives',
+            'For server-local "encrypt this string at rest" use cases (cookies, tokens) where you don\'t need cross-system interop',
+            'Only for symmetric encryption',
+            'Only when AOT publishing',
+          ],
+          correctIndex: 1,
+          explanation: 'DataProtection handles key rotation, algorithm choice, format. You lose only when you need to interop with a system expecting a specific format.',
+        },
+        {
+          question: 'What does HMAC give you that plain hashing does not?',
+          options: [
+            'Speed',
+            'Authenticity: only someone with the secret key can produce a valid MAC',
+            'Reversibility',
+            'Compression',
+          ],
+          correctIndex: 1,
+          explanation: 'A keyed hash is unforgeable without the key. HMAC is the standard construction; popular for API request signing.',
+        },
+        {
+          question: 'Asymmetric crypto (RSA, ECDsa) is mostly used for...',
+          options: [
+            'Encrypting large blobs of data directly',
+            'Bootstrapping symmetric keys and signing',
+            'Hashing passwords',
+            'Compression',
+          ],
+          correctIndex: 1,
+          explanation: 'It\'s slow and has size limits. The pattern is: use asymmetric to exchange or sign a symmetric key, then symmetric for the bulk data.',
+        },
+      ],
+    },
+  ],
+};
+
+const chPlugin: Chapter = {
+  id: 'ch-plugin',
+  title: 'Plugin Architecture & AssemblyLoadContext',
+  description: 'Loading and isolating assemblies at runtime',
+  icon: '🧩',
+  lessons: [
+    {
+      id: 'l-plug-1',
+      title: 'AssemblyLoadContext',
+      type: 'theory',
+      xp: 25,
+      theory: `# Plugin architectures
+
+Sometimes you want to load .NET code that wasn't on disk when your app started: plugin systems, hot-reload, scripting hosts. .NET\'s primary tool is **\`AssemblyLoadContext\` (ALC)**.
+
+## What an ALC is
+
+A boundary inside the runtime that owns a set of loaded assemblies. The default ALC holds your app and its NuGet references. Custom ALCs let you:
+
+- **Load** an assembly that isn't statically referenced (\`alc.LoadFromAssemblyPath(...)\`)
+- **Isolate** assemblies — two ALCs can each hold a different version of the same library without conflict
+- **Unload** the assemblies (if the ALC is **collectible**) — useful for reloadable plugins
+
+\`\`\`csharp
+var alc = new AssemblyLoadContext("plugin-A", isCollectible: true);
+var asm = alc.LoadFromAssemblyPath(pluginPath);
+var pluginType = asm.GetType("Plugin.MyPlugin")!;
+var instance = Activator.CreateInstance(pluginType);
+// ... use it ...
+alc.Unload(); // GC eventually frees everything if no references escape
+\`\`\`
+
+## The "shared contract" problem
+
+Your host has a \`IPlugin\` interface. The plugin DLL implements \`IPlugin\`. If both load the interface from a file, those become **two different types** as far as the runtime is concerned, and your cast fails.
+
+The fix: the host loads \`IPlugin\` once (in the default ALC), and the plugin ALC has \`Resolving\` redirect that interface assembly to the default ALC's already-loaded version. Plugins reference the interface from their own \`compileonly\` package; at runtime the type unifies.
+
+\`\`\`csharp
+alc.Resolving += (ctx, name) =>
+{
+    if (name.Name == "MyApp.PluginContract")
+        return AssemblyLoadContext.Default.LoadFromAssemblyName(name);
+    return null;
+};
+\`\`\`
+
+## Collectible ALC pitfalls
+
+- Any reference from the default ALC to a plugin object pins the whole ALC. \`Unload()\` only completes once all references are gone and a GC has run.
+- Static fields on plugin types live as long as the ALC.
+- AOT publishing doesn't support runtime assembly loading the way JIT does.
+
+## MEF — older and heavier
+
+\`System.Composition\` (modern MEF) layers attribute-driven part discovery on top:
+
+\`\`\`csharp
+[Export(typeof(IPlugin))]
+public class MyPlugin : IPlugin { /* ... */ }
+\`\`\`
+
+A \`CompositionHost\` scans assemblies and wires up exports/imports automatically. Useful for big plugin ecosystems (VS itself uses it). For a small app: just load + reflect, skip MEF.
+
+## Modern alternatives
+
+- **\`Microsoft.Extensions.DependencyInjection\` + a plugin attribute** — register types via reflection at startup
+- **\`PluginLoader\`** (a community library that wraps ALC + dependency resolution properly)
+- **WASM sandbox** — for untrusted plugins, run them in WASI / Wasmtime instead of trusting in-process code
+
+## When you actually need this
+
+- IDE / editor extensions
+- Game modding hosts
+- ETL pipelines where transforms ship as DLLs
+- Multi-tenant function runners
+
+For most app-internal use cases, plain DI is enough — you don't need ALC unless you're loading code that wasn't compiled with your app.`,
+    },
+    {
+      id: 'l-plug-2',
+      title: 'Plugins Quiz',
+      type: 'quiz',
+      xp: 15,
+      quiz: [
+        {
+          question: 'What does an `AssemblyLoadContext` provide?',
+          options: [
+            'A faster JIT',
+            'A boundary that owns a set of loaded assemblies and can be isolated/unloaded',
+            'Compile-time codegen',
+            'A replacement for the GC',
+          ],
+          correctIndex: 1,
+          explanation: 'ALC is the runtime\'s extension point for "load some assemblies into a sandbox I control."',
+        },
+        {
+          question: 'You have `IPlugin` defined in your host. The plugin DLL also references `IPlugin` and implements it. Why might the cast fail?',
+          options: [
+            'C# does not support interfaces across assemblies',
+            'The plugin\'s ALC loaded its own copy of the interface assembly — two distinct types from the runtime\'s POV',
+            'Plugins must be `unsafe`',
+            'The interface needs `[Serializable]`',
+          ],
+          correctIndex: 1,
+          explanation: 'Type identity in .NET = (assembly, type). Two ALCs with the same assembly bytes give you two types. Fix: redirect the contract assembly to the default ALC.',
+        },
+        {
+          question: 'Why is a "collectible" ALC sometimes hard to actually unload?',
+          options: [
+            'It needs admin rights',
+            'Any rooted reference from outside the ALC pins it; unload completes only after a GC with no live references',
+            'It is unloaded immediately on `Unload()`',
+            'Collectible ALCs cannot be unloaded',
+          ],
+          correctIndex: 1,
+          explanation: 'Forgotten event subscriptions, cached delegates, static fields elsewhere — any reference keeps the ALC alive. Auditing roots is the hard part of hot-reload.',
+        },
+        {
+          question: 'When should you NOT use `AssemblyLoadContext`?',
+          options: [
+            'When publishing with Native AOT (no runtime assembly loading)',
+            'For app-internal plugin discovery — DI is simpler',
+            'Both of the above',
+            'Never — ALC is always the right tool',
+          ],
+          correctIndex: 2,
+          explanation: 'AOT removes runtime loading; DI handles in-app extensibility. Reach for ALC for genuinely-runtime-loaded code (3rd-party plugins, hot-reload, scripting).',
+        },
+      ],
+    },
+  ],
+};
+
 // __END_CHAPTERS__
 
 export const csharpCourse: Course = {
@@ -11558,6 +12772,13 @@ export const csharpCourse: Course = {
     chObs,
     chArch,
     chDist,
+    chSourceGen,
+    chAot,
+    chChannels,
+    chAnalyzers,
+    chIlEmit,
+    chCrypto,
+    chPlugin,
     chFinalCapstone,
   ],
 };
