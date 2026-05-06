@@ -76,7 +76,7 @@ class __TestRunner__
         for (int idx = 0; idx < inputs.Length; idx++)
         {
             string inputStr = inputs[idx];
-            string expectedStr = expecteds[idx].Trim();
+            string expectedStr = expecteds[idx].TrimEnd();
             string desc = descs[idx];
             try
             {

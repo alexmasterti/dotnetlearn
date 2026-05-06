@@ -10057,6 +10057,1171 @@ A sidecar runtime that gives every service standard building blocks (state store
   ],
 };
 
+const chMilestone1: Chapter = {
+  id: 'ch-milestone-1',
+  title: 'Milestone 1: Number Cruncher',
+  description: 'Real-world checkpoint after the basics',
+  icon: '🏁',
+  lessons: [
+    {
+      id: 'l-m1-intro',
+      title: 'Welcome to your first milestone',
+      type: 'theory',
+      xp: 10,
+      theory: `# Milestone Checkpoint
+
+Real engineers don't show up on day one and write microservices — they spend weeks getting **the basics** rock-solid. You've now covered: variables, types, casting, conditionals, loops, methods (with all four parameter modifiers), arrays, strings, and console output.
+
+This milestone bundles three small "real" problems where you'll combine those tools the way you would in a working codebase. They're harder than the per-lesson exercises — closer to the kind of question a manager hands you on a Tuesday morning.
+
+## How a milestone works
+
+- Each problem is a scenario, not a one-line exercise
+- Multiple test cases cover edge cases — you have to handle them all
+- Hints appear if you click them; the full solution is hidden by default
+
+When all three are passing, you've **earned** moving on.`,
+    },
+    {
+      id: 'l-m1-c1',
+      title: 'Range Sum',
+      type: 'challenge',
+      xp: 50,
+      challenge: {
+        description: 'You\'re writing a payroll utility. The accounting team wants the sum of every integer from `low` to `high` (inclusive) that is **divisible by `divisor`**. If `low > high`, return 0. The divisor is always positive.\n\nThe brute-force loop solution is fine — readability over cleverness.',
+        difficulty: 'easy',
+        examples: [
+          { input: '1, 10, 3', output: '18', explanation: '3 + 6 + 9 = 18' },
+          { input: '5, 5, 1', output: '5', explanation: 'single value, divisible by 1' },
+          { input: '10, 1, 1', output: '0', explanation: 'low > high → 0' },
+        ],
+        functionName: 'SumDivisibleInRange',
+        starterCode: `using System;
+
+public class Solution
+{
+    public int SumDivisibleInRange(int low, int high, int divisor)
+    {
+        // your code here
+        return 0;
+    }
+}`,
+        solution: `using System;
+
+public class Solution
+{
+    public int SumDivisibleInRange(int low, int high, int divisor)
+    {
+        if (low > high) return 0;
+        int total = 0;
+        for (int i = low; i <= high; i++)
+            if (i % divisor == 0) total += i;
+        return total;
+    }
+}`,
+        testCases: [
+          { input: '1, 10, 3', expected: '18', description: '1..10 div by 3 → 18' },
+          { input: '1, 100, 7', expected: '735', description: '1..100 div by 7 → 735' },
+          { input: '5, 5, 1', expected: '5', description: 'single value' },
+          { input: '10, 1, 1', expected: '0', description: 'low > high' },
+          { input: '-10, 10, 5', expected: '0', description: 'negatives + zero (cancel out)' },
+          { input: '1, 1000, 13', expected: '38038', description: 'larger range' },
+        ],
+        hints: [
+          'Handle the `low > high` case first by returning 0',
+          'Walk i from low to high inclusive; if `i % divisor == 0`, add to a running total',
+          'Initialize the total to 0 BEFORE the loop',
+        ],
+      },
+    },
+    {
+      id: 'l-m1-c2',
+      title: 'Longest Increasing Streak',
+      type: 'challenge',
+      xp: 60,
+      challenge: {
+        description: 'A monitoring service receives an array of CPU readings every minute. You need the **length of the longest run of strictly increasing values**.\n\nA single value counts as a streak of 1. An empty array returns 0.',
+        difficulty: 'medium',
+        examples: [
+          { input: '[1, 2, 3, 1, 5, 6, 7, 8, 4]', output: '5', explanation: 'The run 1,5,6,7,8 has length 5' },
+          { input: '[5]', output: '1' },
+          { input: '[]', output: '0' },
+          { input: '[5, 4, 3, 2]', output: '1', explanation: 'No increases at all' },
+        ],
+        functionName: 'LongestIncreasingStreak',
+        starterCode: `using System;
+
+public class Solution
+{
+    public int LongestIncreasingStreak(int[] readings)
+    {
+        // your code here
+        return 0;
+    }
+}`,
+        solution: `using System;
+
+public class Solution
+{
+    public int LongestIncreasingStreak(int[] readings)
+    {
+        if (readings.Length == 0) return 0;
+        int best = 1;
+        int current = 1;
+        for (int i = 1; i < readings.Length; i++)
+        {
+            if (readings[i] > readings[i - 1])
+            {
+                current++;
+                if (current > best) best = current;
+            }
+            else
+            {
+                current = 1;
+            }
+        }
+        return best;
+    }
+}`,
+        testCases: [
+          { input: '[1, 2, 3, 1, 5, 6, 7, 8, 4]', expected: '5', description: 'Longest run is 1,5,6,7,8' },
+          { input: '[5]', expected: '1', description: 'Single element' },
+          { input: '[]', expected: '0', description: 'Empty' },
+          { input: '[5, 4, 3, 2]', expected: '1', description: 'All decreasing' },
+          { input: '[1, 1, 1, 1]', expected: '1', description: 'All equal (NOT strictly increasing)' },
+          { input: '[1, 2, 3, 4, 5]', expected: '5', description: 'Already sorted ascending' },
+          { input: '[10, 1, 2, 3, 0, 4, 5, 6, 7]', expected: '5', description: 'Best run at the end' },
+        ],
+        hints: [
+          'Walk the array starting at index 1, tracking `current` (current streak) and `best` (longest seen)',
+          'Compare arr[i] to arr[i-1]: greater means current++; otherwise reset current to 1',
+          'Update best when current exceeds it. Don\'t forget the empty-array case',
+        ],
+      },
+    },
+    {
+      id: 'l-m1-c3',
+      title: 'Centered Pyramid',
+      type: 'challenge',
+      xp: 60,
+      challenge: {
+        description: 'For a UI graphic, render a centered pyramid of `*` characters as a single string.\n\nFor height `n`:\n- Row `i` (1-based) has `2i - 1` stars\n- Each row is padded with spaces on the LEFT so that all rows align on a common axis\n- Rows are separated by `\\n` (no trailing newline)\n\nFor `n = 3`:\n```\n  *\n ***\n*****\n```\n\nFor `n = 0`, return an empty string.',
+        difficulty: 'medium',
+        examples: [
+          { input: '3', output: '  *\\n ***\\n*****' },
+          { input: '1', output: '*' },
+          { input: '0', output: '' },
+        ],
+        functionName: 'Pyramid',
+        starterCode: `using System;
+using System.Text;
+
+public class Solution
+{
+    public string Pyramid(int height)
+    {
+        // your code here
+        return "";
+    }
+}`,
+        solution: `using System;
+using System.Text;
+
+public class Solution
+{
+    public string Pyramid(int height)
+    {
+        if (height <= 0) return "";
+        var sb = new StringBuilder();
+        for (int i = 1; i <= height; i++)
+        {
+            int stars = 2 * i - 1;
+            int pad = height - i;
+            sb.Append(' ', pad);
+            sb.Append('*', stars);
+            if (i < height) sb.Append('\\n');
+        }
+        return sb.ToString();
+    }
+}`,
+        testCases: [
+          { input: '3', expected: '  *\n ***\n*****', description: 'Height 3' },
+          { input: '1', expected: '*', description: 'Single row' },
+          { input: '0', expected: '', description: 'Empty' },
+          { input: '5', expected: '    *\n   ***\n  *****\n *******\n*********', description: 'Height 5' },
+          { input: '-2', expected: '', description: 'Negative → empty' },
+        ],
+        hints: [
+          'Use a StringBuilder — concatenating in a loop with `+` is wasteful',
+          'For row i: pad = height - i spaces, stars = 2i - 1',
+          '`sb.Append(\' \', count)` and `sb.Append(\'*\', count)` write a char N times',
+          'Append `\\n` after each row EXCEPT the last',
+        ],
+      },
+    },
+  ],
+};
+
+const chMilestone2: Chapter = {
+  id: 'ch-milestone-2',
+  title: 'Milestone 2: Library System',
+  description: 'OOP checkpoint - design a small system',
+  icon: '📚',
+  lessons: [
+    {
+      id: 'l-m2-intro',
+      title: 'OOP Milestone',
+      type: 'theory',
+      xp: 10,
+      theory: `# Milestone 2 — Real OOP
+
+You've learned classes, fields, properties, constructors, inheritance, polymorphism, and interfaces. Now you'll combine them.
+
+## The scenario
+
+You're joining a small team that's building a library management system. Items in the catalog can be Books, DVDs, or Magazines. The team has agreed on:
+
+- An abstract base type \`LibraryItem\` with a virtual \`Description()\` method
+- Concrete types \`Book\`, \`Dvd\`, \`Magazine\` that override Description differently
+- An \`ILoanable\` interface that Books and DVDs implement (Magazines don't leave the building)
+
+Each catalog entry comes in as a string in a known format. Your code parses each, instantiates the right concrete type, and processes the catalog using polymorphism.
+
+## Format spec
+
+Catalog entries are pipe-separated:
+- Books: \`BOOK|Title|Author\`
+- DVDs: \`DVD|Title|Minutes\`
+- Magazines: \`MAG|Title|IssueNumber\`
+
+Three challenges follow. They're tied — your class hierarchy from challenge 2.1 will work for 2.2 and 2.3.`,
+    },
+    {
+      id: 'l-m2-c1',
+      title: 'Polymorphic Descriptions',
+      type: 'challenge',
+      xp: 60,
+      challenge: {
+        description: 'Implement a class hierarchy and a method `string[] DescribeAll(string[] entries)` that returns a description per entry.\n\nFormat by type:\n- BOOK: `Book "Title" by Author`\n- DVD: `DVD "Title" (Nmin)`\n- MAG: `Magazine "Title" issue N`\n\nUse an abstract `LibraryItem` with a virtual `Description()` so the dispatch is polymorphic — the test will still pass if you cheat with switch on the type prefix, but the spirit of this milestone is OOP.',
+        difficulty: 'medium',
+        examples: [
+          { input: '["BOOK|Dune|Herbert", "DVD|Inception|148", "MAG|TIME|42"]', output: '["Book \\"Dune\\" by Herbert", "DVD \\"Inception\\" (148min)", "Magazine \\"TIME\\" issue 42"]' },
+          { input: '[]', output: '[]' },
+        ],
+        functionName: 'DescribeAll',
+        starterCode: `using System;
+
+abstract class LibraryItem
+{
+    public string Title;
+    public abstract string Description();
+}
+
+class Book : LibraryItem
+{
+    public string Author;
+    public override string Description() => "";  // implement
+}
+
+class Dvd : LibraryItem
+{
+    public int Minutes;
+    public override string Description() => "";  // implement
+}
+
+class Magazine : LibraryItem
+{
+    public int Issue;
+    public override string Description() => "";  // implement
+}
+
+public class Solution
+{
+    public string[] DescribeAll(string[] entries)
+    {
+        // Parse each entry, instantiate the right type, call Description()
+        return new string[0];
+    }
+}`,
+        solution: `using System;
+
+abstract class LibraryItem
+{
+    public string Title;
+    public abstract string Description();
+}
+
+class Book : LibraryItem
+{
+    public string Author;
+    public override string Description() => "Book \\"" + Title + "\\" by " + Author;
+}
+
+class Dvd : LibraryItem
+{
+    public int Minutes;
+    public override string Description() => "DVD \\"" + Title + "\\" (" + Minutes + "min)";
+}
+
+class Magazine : LibraryItem
+{
+    public int Issue;
+    public override string Description() => "Magazine \\"" + Title + "\\" issue " + Issue;
+}
+
+public class Solution
+{
+    public string[] DescribeAll(string[] entries)
+    {
+        var result = new string[entries.Length];
+        for (int i = 0; i < entries.Length; i++)
+        {
+            var parts = entries[i].Split('|');
+            LibraryItem item;
+            if (parts[0] == "BOOK") item = new Book { Title = parts[1], Author = parts[2] };
+            else if (parts[0] == "DVD") item = new Dvd { Title = parts[1], Minutes = int.Parse(parts[2]) };
+            else item = new Magazine { Title = parts[1], Issue = int.Parse(parts[2]) };
+            result[i] = item.Description();
+        }
+        return result;
+    }
+}`,
+        testCases: [
+          {
+            input: '["BOOK|Dune|Herbert", "DVD|Inception|148", "MAG|TIME|42"]',
+            expected: '["Book "Dune" by Herbert", "DVD "Inception" (148min)", "Magazine "TIME" issue 42"]',
+            description: 'One of each type'
+          },
+          {
+            input: '[]',
+            expected: '[]',
+            description: 'Empty catalog'
+          },
+          {
+            input: '["BOOK|1984|Orwell"]',
+            expected: '["Book "1984" by Orwell"]',
+            description: 'Single book'
+          },
+          {
+            input: '["DVD|Heat|171", "DVD|Up|96"]',
+            expected: '["DVD "Heat" (171min)", "DVD "Up" (96min)"]',
+            description: 'Two DVDs'
+          },
+        ],
+        hints: [
+          'Split each entry by `|` to get the parts',
+          'parts[0] is the type discriminator. Use `if/else` (not switch with type pattern — sandbox limitation)',
+          'In Description(), build the string with concatenation and embed the title inside escaped quotes',
+        ],
+      },
+    },
+    {
+      id: 'l-m2-c2',
+      title: 'Loanable Filter',
+      type: 'challenge',
+      xp: 60,
+      challenge: {
+        description: 'Magazines stay in the library. Books and DVDs can be loaned out.\n\nImplement an `ILoanable` interface and have `Book` and `Dvd` implement it (`Magazine` does not). Then implement `string[] LoanableTitles(string[] entries)` that returns ONLY the titles of loanable items, in the original order.',
+        difficulty: 'medium',
+        examples: [
+          { input: '["BOOK|Dune|Herbert", "MAG|TIME|42", "DVD|Heat|171"]', output: '["Dune", "Heat"]', explanation: 'Magazine excluded' },
+          { input: '["MAG|TIME|1", "MAG|National Geographic|2"]', output: '[]' },
+        ],
+        functionName: 'LoanableTitles',
+        starterCode: `using System;
+using System.Collections.Generic;
+
+interface ILoanable { }   // marker interface
+
+abstract class LibraryItem { public string Title; }
+
+// Make Book and Dvd implement ILoanable; not Magazine
+class Book : LibraryItem, ILoanable { public string Author; }
+class Dvd  : LibraryItem, ILoanable { public int Minutes; }
+class Magazine : LibraryItem { public int Issue; }
+
+public class Solution
+{
+    public string[] LoanableTitles(string[] entries)
+    {
+        // Parse each entry; if it's ILoanable, keep its title
+        return new string[0];
+    }
+}`,
+        solution: `using System;
+using System.Collections.Generic;
+
+interface ILoanable { }
+
+abstract class LibraryItem { public string Title; }
+
+class Book : LibraryItem, ILoanable { public string Author; }
+class Dvd  : LibraryItem, ILoanable { public int Minutes; }
+class Magazine : LibraryItem { public int Issue; }
+
+public class Solution
+{
+    public string[] LoanableTitles(string[] entries)
+    {
+        var result = new List<string>();
+        foreach (var e in entries)
+        {
+            var parts = e.Split('|');
+            LibraryItem item;
+            if (parts[0] == "BOOK") item = new Book { Title = parts[1], Author = parts[2] };
+            else if (parts[0] == "DVD") item = new Dvd { Title = parts[1], Minutes = int.Parse(parts[2]) };
+            else item = new Magazine { Title = parts[1], Issue = int.Parse(parts[2]) };
+            if (item is ILoanable) result.Add(item.Title);
+        }
+        return result.ToArray();
+    }
+}`,
+        testCases: [
+          { input: '["BOOK|Dune|Herbert", "MAG|TIME|42", "DVD|Heat|171"]', expected: '["Dune", "Heat"]', description: 'Mixed types' },
+          { input: '["MAG|TIME|1", "MAG|National Geographic|2"]', expected: '[]', description: 'All magazines' },
+          { input: '["BOOK|1984|Orwell"]', expected: '["1984"]', description: 'Single book' },
+          { input: '[]', expected: '[]', description: 'Empty' },
+          { input: '["DVD|Up|96", "BOOK|Dune|Herbert", "DVD|Heat|171", "MAG|TIME|42"]', expected: '["Up", "Dune", "Heat"]', description: 'Order preserved' },
+        ],
+        hints: [
+          'After instantiating the right type, test `if (item is ILoanable)` to filter',
+          'Use a List<string> as you walk; convert to array at the end with .ToArray()',
+          'The order of results matches the input — don\'t sort',
+        ],
+      },
+    },
+    {
+      id: 'l-m2-c3',
+      title: 'Books by Author',
+      type: 'challenge',
+      xp: 50,
+      challenge: {
+        description: 'Implement `int CountBooksByAuthor(string[] entries, string author)` — count how many BOOK entries have an exact (case-sensitive) matching author. Ignore non-BOOK entries.',
+        difficulty: 'easy',
+        examples: [
+          { input: '["BOOK|Dune|Herbert", "BOOK|Children of Dune|Herbert", "DVD|x|10"], "Herbert"', output: '2' },
+          { input: '["MAG|x|1"], "Anyone"', output: '0' },
+        ],
+        functionName: 'CountBooksByAuthor',
+        starterCode: `using System;
+
+public class Solution
+{
+    public int CountBooksByAuthor(string[] entries, string author)
+    {
+        // your code here
+        return 0;
+    }
+}`,
+        solution: `using System;
+
+public class Solution
+{
+    public int CountBooksByAuthor(string[] entries, string author)
+    {
+        int count = 0;
+        foreach (var e in entries)
+        {
+            var parts = e.Split('|');
+            if (parts.Length >= 3 && parts[0] == "BOOK" && parts[2] == author)
+                count++;
+        }
+        return count;
+    }
+}`,
+        testCases: [
+          { input: '["BOOK|Dune|Herbert", "BOOK|Children of Dune|Herbert", "DVD|x|10"], "Herbert"', expected: '2', description: 'Two by Herbert' },
+          { input: '["MAG|x|1"], "Anyone"', expected: '0', description: 'No books' },
+          { input: '[], "Herbert"', expected: '0', description: 'Empty input' },
+          { input: '["BOOK|A|herbert"], "Herbert"', expected: '0', description: 'Case sensitive (no match)' },
+          { input: '["BOOK|A|Herbert", "BOOK|B|Asimov", "BOOK|C|Herbert"], "Herbert"', expected: '2', description: 'Mixed authors' },
+        ],
+        hints: [
+          'Split each entry by `|`',
+          'Only count when parts[0] == "BOOK" AND parts[2] == author',
+          'Case-sensitive comparison — string `==` is exact in C#',
+        ],
+      },
+    },
+  ],
+};
+
+const chMilestone3: Chapter = {
+  id: 'ch-milestone-3',
+  title: 'Milestone 3: Sales Report',
+  description: 'Data engineering checkpoint - LINQ on real records',
+  icon: '📈',
+  lessons: [
+    {
+      id: 'l-m3-intro',
+      title: 'Data engineering milestone',
+      type: 'theory',
+      xp: 10,
+      theory: `# Milestone 3 — Sales Report
+
+You now know LINQ inside-out: filtering, projection, grouping, aggregation, joining. This milestone takes raw data and turns it into a report — exactly the kind of work data-shaped services do constantly.
+
+## The scenario
+
+You're building a daily sales summary for a small e-commerce shop. The raw input is an array of strings, each a single sale in this format:
+
+\`\`\`
+YYYY-MM-DD|Customer|Amount
+\`\`\`
+
+For example: \`"2026-01-15|Alice|49.99"\`
+
+Three deliverables:
+1. **Top customers** — names of the top K by total spend
+2. **Daily averages** — average sale per date
+3. **Best day** — single day with highest total
+
+All three lean on \`GroupBy\` + an aggregator. You'll lean on \`InvariantCulture\` for stable decimal formatting.`,
+    },
+    {
+      id: 'l-m3-c1',
+      title: 'Top Customers by Spend',
+      type: 'challenge',
+      xp: 60,
+      challenge: {
+        description: 'Given a list of sales (`"DATE|Customer|Amount"`), return the names of the top **K customers** by total spend in **descending** order. Break ties **alphabetically** ascending. If K is larger than the number of distinct customers, return all of them.\n\nAmounts use a dot decimal separator (`49.99`).',
+        difficulty: 'medium',
+        examples: [
+          { input: '["2026-01-01|Alice|100", "2026-01-02|Bob|50", "2026-01-03|Alice|75"], 1', output: '["Alice"]', explanation: 'Alice = 175, Bob = 50' },
+          { input: '["2026-01-01|A|100", "2026-01-02|B|100"], 2', output: '["A", "B"]', explanation: 'Tied — alphabetical' },
+        ],
+        functionName: 'TopCustomers',
+        starterCode: `using System;
+using System.Linq;
+using System.Globalization;
+
+public class Solution
+{
+    public string[] TopCustomers(string[] sales, int k)
+    {
+        // your code here
+        return new string[0];
+    }
+}`,
+        solution: `using System;
+using System.Linq;
+using System.Globalization;
+
+public class Solution
+{
+    public string[] TopCustomers(string[] sales, int k)
+    {
+        return sales
+            .Select(s => s.Split('|'))
+            .Select(p => new { Name = p[1], Amount = decimal.Parse(p[2], CultureInfo.InvariantCulture) })
+            .GroupBy(x => x.Name)
+            .Select(g => new { Name = g.Key, Total = g.Sum(x => x.Amount) })
+            .OrderByDescending(x => x.Total)
+            .ThenBy(x => x.Name)
+            .Take(k)
+            .Select(x => x.Name)
+            .ToArray();
+    }
+}`,
+        testCases: [
+          { input: '["2026-01-01|Alice|100", "2026-01-02|Bob|50", "2026-01-03|Alice|75"], 1', expected: '["Alice"]', description: 'Top 1' },
+          { input: '["2026-01-01|A|100", "2026-01-02|B|100"], 2', expected: '["A", "B"]', description: 'Tie alphabetical' },
+          { input: '["2026-01-01|A|100"], 5', expected: '["A"]', description: 'k > distinct' },
+          { input: '["2026-01-01|Z|10", "2026-01-02|A|10", "2026-01-03|M|10"], 3', expected: '["A", "M", "Z"]', description: 'All tied → alphabetical' },
+          { input: '["2026-01-01|Alice|49.99", "2026-01-02|Alice|50.01", "2026-01-03|Bob|99"], 2', expected: '["Alice", "Bob"]', description: 'Decimals (Alice=100.00, Bob=99)' },
+        ],
+        hints: [
+          'Split each line by `|`; build an anonymous object with name + parsed amount',
+          'GroupBy(x => x.Name), then project { Name, Total = Sum }',
+          'OrderByDescending(x => x.Total).ThenBy(x => x.Name) — tie-break alphabetical',
+          'Use `decimal.Parse(s, CultureInfo.InvariantCulture)` to handle the dot decimal',
+        ],
+      },
+    },
+    {
+      id: 'l-m3-c2',
+      title: 'Daily Average',
+      type: 'challenge',
+      xp: 60,
+      challenge: {
+        description: 'For each unique date in the sales data, compute the **average sale amount** and return as `"YYYY-MM-DD:avg"` lines, sorted ascending by date.\n\nFormat the average with **2 decimals**, using `CultureInfo.InvariantCulture` so the decimal separator is `.` regardless of host locale.',
+        difficulty: 'medium',
+        examples: [
+          { input: '["2026-01-01|A|100", "2026-01-01|B|50", "2026-01-02|C|75"]', output: '["2026-01-01:75.00", "2026-01-02:75.00"]' },
+          { input: '["2026-01-15|A|49.99"]', output: '["2026-01-15:49.99"]' },
+        ],
+        functionName: 'DailyAverages',
+        starterCode: `using System;
+using System.Linq;
+using System.Globalization;
+
+public class Solution
+{
+    public string[] DailyAverages(string[] sales)
+    {
+        // your code here
+        return new string[0];
+    }
+}`,
+        solution: `using System;
+using System.Linq;
+using System.Globalization;
+
+public class Solution
+{
+    public string[] DailyAverages(string[] sales)
+    {
+        return sales
+            .Select(s => s.Split('|'))
+            .Select(p => new { Date = p[0], Amount = decimal.Parse(p[2], CultureInfo.InvariantCulture) })
+            .GroupBy(x => x.Date)
+            .OrderBy(g => g.Key)
+            .Select(g => g.Key + ":" + g.Average(x => x.Amount).ToString("F2", CultureInfo.InvariantCulture))
+            .ToArray();
+    }
+}`,
+        testCases: [
+          { input: '["2026-01-01|A|100", "2026-01-01|B|50", "2026-01-02|C|75"]', expected: '["2026-01-01:75.00", "2026-01-02:75.00"]', description: 'Two dates with averages' },
+          { input: '["2026-01-15|A|49.99"]', expected: '["2026-01-15:49.99"]', description: 'Single sale' },
+          { input: '[]', expected: '[]', description: 'No sales' },
+          { input: '["2026-03-01|A|10", "2026-02-01|B|20", "2026-01-01|C|30"]', expected: '["2026-01-01:30.00", "2026-02-01:20.00", "2026-03-01:10.00"]', description: 'Order by date ascending' },
+        ],
+        hints: [
+          'Group by Date, then for each group call Average(x => x.Amount)',
+          'Format each average with .ToString("F2", CultureInfo.InvariantCulture) so 75 prints as "75.00"',
+          'OrderBy(g => g.Key) sorts ISO dates correctly because they\'re already lexicographically sortable',
+        ],
+      },
+    },
+    {
+      id: 'l-m3-c3',
+      title: 'Best Day',
+      type: 'challenge',
+      xp: 50,
+      challenge: {
+        description: 'Find the date with the **highest total sales**. Return as a single string `"YYYY-MM-DD:total"` (total formatted with 2 decimals, InvariantCulture).\n\nIf two dates tie, return the **earlier** date.\n\nReturn an empty string if there are no sales.',
+        difficulty: 'easy',
+        examples: [
+          { input: '["2026-01-01|A|100", "2026-01-02|B|50", "2026-01-02|C|60"]', output: '2026-01-02:110.00', explanation: 'Day 2 totals 110, day 1 totals 100' },
+          { input: '[]', output: '' },
+        ],
+        functionName: 'BestDay',
+        starterCode: `using System;
+using System.Linq;
+using System.Globalization;
+
+public class Solution
+{
+    public string BestDay(string[] sales)
+    {
+        // your code here
+        return "";
+    }
+}`,
+        solution: `using System;
+using System.Linq;
+using System.Globalization;
+
+public class Solution
+{
+    public string BestDay(string[] sales)
+    {
+        if (sales.Length == 0) return "";
+        var best = sales
+            .Select(s => s.Split('|'))
+            .Select(p => new { Date = p[0], Amount = decimal.Parse(p[2], CultureInfo.InvariantCulture) })
+            .GroupBy(x => x.Date)
+            .Select(g => new { Date = g.Key, Total = g.Sum(x => x.Amount) })
+            .OrderByDescending(x => x.Total)
+            .ThenBy(x => x.Date)
+            .First();
+        return best.Date + ":" + best.Total.ToString("F2", CultureInfo.InvariantCulture);
+    }
+}`,
+        testCases: [
+          { input: '["2026-01-01|A|100", "2026-01-02|B|50", "2026-01-02|C|60"]', expected: '2026-01-02:110.00', description: 'Day 2 wins' },
+          { input: '[]', expected: '', description: 'Empty' },
+          { input: '["2026-01-01|A|50", "2026-01-02|B|50"]', expected: '2026-01-01:50.00', description: 'Tie → earlier date' },
+          { input: '["2026-05-06|X|9999.99"]', expected: '2026-05-06:9999.99', description: 'Single sale' },
+        ],
+        hints: [
+          'Group by Date, sum amount per group',
+          'OrderByDescending by total, ThenBy date (asc) for tie-break',
+          'First() picks the top group; format Date + ":" + total.ToString("F2", invariant)',
+          'Don\'t forget the empty-input case',
+        ],
+      },
+    },
+  ],
+};
+
+const chFinalCapstone: Chapter = {
+  id: 'ch-final-capstone',
+  title: 'Final Capstone: Order Engine',
+  description: 'Comprehensive evaluation - everything you have learned',
+  icon: '🎓',
+  lessons: [
+    {
+      id: 'l-fin-intro',
+      title: 'The Capstone',
+      type: 'theory',
+      xp: 20,
+      theory: `# Final Capstone
+
+You've come a long way — basics, OOP, generics, LINQ, async, patterns, ecosystem. Time to bring it all together.
+
+## The scenario
+
+You've been brought in as a contractor for a small online store. Their order pipeline is held together with duct tape — they need it rebuilt with proper validation, totals, customer reporting, and invoice formatting. Five progressive challenges follow.
+
+## The data format
+
+An **order** is a single string in this format:
+
+\`\`\`
+CustomerName|qty1:price1,qty2:price2,...
+\`\`\`
+
+For example: \`"Alice|2:9.99,1:14.50"\` — Alice bought 2 items at $9.99 and 1 item at $14.50.
+
+- Quantities are positive integers
+- Prices are decimals with \`.\` separator
+- Customer names contain only letters and spaces (no commas, no pipes)
+- Lines may be missing or zero-quantity in **invalid** orders — your validator catches them
+
+## Discount tier
+
+For total calculations:
+- subtotal < 100 → 0% discount
+- 100 ≤ subtotal < 500 → 5% discount
+- subtotal ≥ 500 → 10% discount
+
+Total = subtotal × (1 - discount).
+
+## Five challenges
+
+1. \`IsValidOrder(string order)\` — basic validation
+2. \`OrderTotal(string order)\` — apply discount tier
+3. \`BestCustomer(string[] orders)\` — total per customer, return name with highest total
+4. \`FormatInvoice(string order)\` — produce a multi-line invoice string
+5. \`CustomerSummary(string[] orders)\` — full report, alphabetical by name
+
+Pass all five and you've completed the path.`,
+    },
+    {
+      id: 'l-fin-c1',
+      title: 'Validate Order',
+      type: 'challenge',
+      xp: 50,
+      challenge: {
+        description: 'Return `true` if the order is valid, `false` otherwise. An order is valid when:\n\n- The customer name is non-empty\n- At least one line is present\n- Every line has a positive integer quantity AND a positive decimal price\n\nMalformed input (missing pipe, bad numbers, empty lines) should return false (don\'t throw).',
+        difficulty: 'easy',
+        examples: [
+          { input: '"Alice|2:9.99,1:14.50"', output: 'True' },
+          { input: '"|2:9.99"', output: 'False', explanation: 'Empty name' },
+          { input: '"Alice|"', output: 'False', explanation: 'No lines' },
+          { input: '"Alice|0:9.99"', output: 'False', explanation: 'Zero quantity' },
+          { input: '"Alice|2:-1"', output: 'False', explanation: 'Negative price' },
+        ],
+        functionName: 'IsValidOrder',
+        starterCode: `using System;
+using System.Globalization;
+
+public class Solution
+{
+    public bool IsValidOrder(string order)
+    {
+        // your code here
+        return false;
+    }
+}`,
+        solution: `using System;
+using System.Globalization;
+
+public class Solution
+{
+    public bool IsValidOrder(string order)
+    {
+        if (string.IsNullOrEmpty(order)) return false;
+        var parts = order.Split('|');
+        if (parts.Length != 2) return false;
+        if (string.IsNullOrEmpty(parts[0])) return false;
+        if (string.IsNullOrEmpty(parts[1])) return false;
+
+        var lines = parts[1].Split(',');
+        if (lines.Length == 0) return false;
+        foreach (var line in lines)
+        {
+            var qp = line.Split(':');
+            if (qp.Length != 2) return false;
+            if (!int.TryParse(qp[0], out int qty) || qty <= 0) return false;
+            if (!decimal.TryParse(qp[1], NumberStyles.Number, CultureInfo.InvariantCulture, out decimal price) || price <= 0m) return false;
+        }
+        return true;
+    }
+}`,
+        testCases: [
+          { input: '"Alice|2:9.99,1:14.50"', expected: 'True', description: 'Valid order' },
+          { input: '"|2:9.99"', expected: 'False', description: 'Empty name' },
+          { input: '"Alice|"', expected: 'False', description: 'No lines' },
+          { input: '"Alice|0:9.99"', expected: 'False', description: 'Zero qty' },
+          { input: '"Alice|2:-1"', expected: 'False', description: 'Negative price' },
+          { input: '"Alice|2:9.99,bad"', expected: 'False', description: 'Malformed line' },
+          { input: '"Alice|1:0.01"', expected: 'True', description: 'Tiny but positive price' },
+          { input: '"Bob|3:5,2:10,1:1"', expected: 'True', description: 'Three lines' },
+        ],
+        hints: [
+          'Split by `|` first to get [name, lines]',
+          'Use `int.TryParse` and `decimal.TryParse` so bad input returns false instead of throwing',
+          'For decimals, pass `NumberStyles.Number, CultureInfo.InvariantCulture`',
+          'Reject zero/negative quantities and prices',
+        ],
+      },
+    },
+    {
+      id: 'l-fin-c2',
+      title: 'Order Total with Discount',
+      type: 'challenge',
+      xp: 60,
+      challenge: {
+        description: 'Compute the total of an order after applying the discount tier:\n\n- subtotal < 100 → 0%\n- 100 ≤ subtotal < 500 → 5%\n- subtotal ≥ 500 → 10%\n\nTotal = subtotal × (1 − discount). Return as a string formatted to **2 decimals** using `InvariantCulture`.\n\nAssume the input is valid (you don\'t need to revalidate).',
+        difficulty: 'medium',
+        examples: [
+          { input: '"Alice|1:50.00"', output: '50.00', explanation: 'Below 100 → no discount' },
+          { input: '"Alice|2:60.00"', output: '114.00', explanation: '120 × 0.95 = 114' },
+          { input: '"Alice|10:60.00"', output: '540.00', explanation: '600 × 0.9 = 540' },
+        ],
+        functionName: 'OrderTotal',
+        starterCode: `using System;
+using System.Globalization;
+
+public class Solution
+{
+    public string OrderTotal(string order)
+    {
+        // your code here
+        return "0.00";
+    }
+}`,
+        solution: `using System;
+using System.Globalization;
+
+public class Solution
+{
+    public string OrderTotal(string order)
+    {
+        var parts = order.Split('|');
+        decimal subtotal = 0m;
+        foreach (var line in parts[1].Split(','))
+        {
+            var qp = line.Split(':');
+            int qty = int.Parse(qp[0]);
+            decimal price = decimal.Parse(qp[1], CultureInfo.InvariantCulture);
+            subtotal += qty * price;
+        }
+        decimal discount = 0m;
+        if (subtotal >= 500m) discount = 0.10m;
+        else if (subtotal >= 100m) discount = 0.05m;
+        decimal total = subtotal * (1m - discount);
+        return total.ToString("F2", CultureInfo.InvariantCulture);
+    }
+}`,
+        testCases: [
+          { input: '"Alice|1:50.00"', expected: '50.00', description: 'Under 100 — no discount' },
+          { input: '"Alice|2:60.00"', expected: '114.00', description: '120 → 5% off' },
+          { input: '"Alice|10:60.00"', expected: '540.00', description: '600 → 10% off' },
+          { input: '"Bob|2:50.00,1:25.00"', expected: '118.75', description: '125 → 5% off' },
+          { input: '"Carol|1:99.99"', expected: '99.99', description: '99.99 → no discount' },
+          { input: '"Dan|1:100.00"', expected: '95.00', description: '100 → 5% boundary' },
+          { input: '"Eve|1:500.00"', expected: '450.00', description: '500 → 10% boundary' },
+        ],
+        hints: [
+          'Walk lines, accumulate subtotal = sum(qty * price)',
+          'Choose discount: ≥500 → 0.10, ≥100 → 0.05, else 0',
+          'total = subtotal * (1 - discount); format with .ToString("F2", InvariantCulture)',
+          'Use decimal (not double) — money never likes floating-point rounding',
+        ],
+      },
+    },
+    {
+      id: 'l-fin-c3',
+      title: 'Best Customer',
+      type: 'challenge',
+      xp: 60,
+      challenge: {
+        description: 'Given many orders, return the **name of the customer with the highest total spend** (after discounts). If two customers tie, return the alphabetically earlier name. Return empty string if no orders.\n\nReuse your discount logic from challenge 2 — a single customer may have multiple orders.',
+        difficulty: 'medium',
+        examples: [
+          { input: '["Alice|2:60.00", "Bob|1:50.00", "Alice|1:50.00"]', output: 'Alice', explanation: 'Alice: 120→114 + 50 = 164. Bob: 50.' },
+          { input: '[]', output: '' },
+        ],
+        functionName: 'BestCustomer',
+        starterCode: `using System;
+using System.Linq;
+using System.Globalization;
+using System.Collections.Generic;
+
+public class Solution
+{
+    public string BestCustomer(string[] orders)
+    {
+        // your code here
+        return "";
+    }
+}`,
+        solution: `using System;
+using System.Linq;
+using System.Globalization;
+using System.Collections.Generic;
+
+public class Solution
+{
+    public string BestCustomer(string[] orders)
+    {
+        if (orders.Length == 0) return "";
+        var totals = new Dictionary<string, decimal>();
+        foreach (var o in orders)
+        {
+            var parts = o.Split('|');
+            string name = parts[0];
+            decimal subtotal = 0m;
+            foreach (var line in parts[1].Split(','))
+            {
+                var qp = line.Split(':');
+                subtotal += int.Parse(qp[0]) * decimal.Parse(qp[1], CultureInfo.InvariantCulture);
+            }
+            decimal discount = subtotal >= 500m ? 0.10m : subtotal >= 100m ? 0.05m : 0m;
+            decimal total = subtotal * (1m - discount);
+            if (totals.ContainsKey(name)) totals[name] += total;
+            else totals[name] = total;
+        }
+        return totals
+            .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => kv.Key)
+            .First()
+            .Key;
+    }
+}`,
+        testCases: [
+          { input: '["Alice|2:60.00", "Bob|1:50.00", "Alice|1:50.00"]', expected: 'Alice', description: 'Alice wins overall' },
+          { input: '[]', expected: '', description: 'Empty' },
+          { input: '["A|1:50", "B|1:50"]', expected: 'A', description: 'Tie → alphabetical' },
+          { input: '["Z|1:1000", "A|1:10"]', expected: 'Z', description: 'Z wins by total' },
+          { input: '["Solo|2:100"]', expected: 'Solo', description: 'Single order' },
+        ],
+        hints: [
+          'Use a Dictionary<string, decimal> mapping customer name → running total',
+          'For each order: compute total (subtotal − discount) and accumulate to the customer\'s entry',
+          'Pick the winner with OrderByDescending(value).ThenBy(name).First().Key',
+        ],
+      },
+    },
+    {
+      id: 'l-fin-c4',
+      title: 'Format Invoice',
+      type: 'challenge',
+      xp: 70,
+      challenge: {
+        description: 'Format a single order as a multi-line invoice string. Format:\n\n```\nInvoice for: <CustomerName>\n- <qty>x @<price>: <subtotal>\n- <qty>x @<price>: <subtotal>\n...\nSubtotal: <subtotal>\nDiscount: <discount>%\nTotal:    <total>\n```\n\n- Each money value formatted with 2 decimals (InvariantCulture)\n- Discount value is the percentage as a whole number (0, 5, or 10)\n- Note the alignment: "Total:" is followed by **4 spaces** (so it lines up with "Subtotal:" + 1 space)\n- Lines separated by `\\n`, no trailing newline',
+        difficulty: 'hard',
+        examples: [
+          { input: '"Alice|2:60.00"', output: 'Invoice for: Alice\\n- 2x @60.00: 120.00\\nSubtotal: 120.00\\nDiscount: 5%\\nTotal:    114.00' },
+        ],
+        functionName: 'FormatInvoice',
+        starterCode: `using System;
+using System.Text;
+using System.Globalization;
+
+public class Solution
+{
+    public string FormatInvoice(string order)
+    {
+        // your code here
+        return "";
+    }
+}`,
+        solution: `using System;
+using System.Text;
+using System.Globalization;
+
+public class Solution
+{
+    public string FormatInvoice(string order)
+    {
+        var parts = order.Split('|');
+        string name = parts[0];
+        var sb = new StringBuilder();
+        sb.Append("Invoice for: ").Append(name).Append('\\n');
+        decimal subtotal = 0m;
+        foreach (var line in parts[1].Split(','))
+        {
+            var qp = line.Split(':');
+            int qty = int.Parse(qp[0]);
+            decimal price = decimal.Parse(qp[1], CultureInfo.InvariantCulture);
+            decimal lineTotal = qty * price;
+            subtotal += lineTotal;
+            sb.Append("- ").Append(qty).Append("x @")
+              .Append(price.ToString("F2", CultureInfo.InvariantCulture))
+              .Append(": ")
+              .Append(lineTotal.ToString("F2", CultureInfo.InvariantCulture))
+              .Append('\\n');
+        }
+        int discountPct = subtotal >= 500m ? 10 : subtotal >= 100m ? 5 : 0;
+        decimal total = subtotal * (1m - discountPct / 100m);
+        sb.Append("Subtotal: ").Append(subtotal.ToString("F2", CultureInfo.InvariantCulture)).Append('\\n');
+        sb.Append("Discount: ").Append(discountPct).Append("%").Append('\\n');
+        sb.Append("Total:    ").Append(total.ToString("F2", CultureInfo.InvariantCulture));
+        return sb.ToString();
+    }
+}`,
+        testCases: [
+          {
+            input: '"Alice|2:60.00"',
+            expected: 'Invoice for: Alice\n- 2x @60.00: 120.00\nSubtotal: 120.00\nDiscount: 5%\nTotal:    114.00',
+            description: 'Single line, 5% discount',
+          },
+          {
+            input: '"Bob|1:50.00"',
+            expected: 'Invoice for: Bob\n- 1x @50.00: 50.00\nSubtotal: 50.00\nDiscount: 0%\nTotal:    50.00',
+            description: 'No discount',
+          },
+          {
+            input: '"Carol|10:60.00,5:10.00"',
+            expected: 'Invoice for: Carol\n- 10x @60.00: 600.00\n- 5x @10.00: 50.00\nSubtotal: 650.00\nDiscount: 10%\nTotal:    585.00',
+            description: 'Multiple lines, 10%',
+          },
+        ],
+        hints: [
+          'Use StringBuilder; append a `\\n` after each line EXCEPT the last',
+          'Format every money value with .ToString("F2", InvariantCulture)',
+          '"Subtotal: " has 1 space; "Total:" needs 4 spaces to line up with Subtotal\'s `:` + space',
+          'Discount prints as a whole percent: 0, 5, or 10 — no decimals',
+        ],
+      },
+    },
+    {
+      id: 'l-fin-c5',
+      title: 'Customer Summary',
+      type: 'challenge',
+      xp: 80,
+      challenge: {
+        description: 'Final boss. Given many orders, produce one summary line per **distinct** customer in the format:\n\n```\n<Name>: $<total> (<n> orders)\n```\n\n- Total formatted with 2 decimals (InvariantCulture); apply the per-order discount tier before summing\n- Customers in **alphabetical order**\n- One distinct customer per output line, regardless of how many orders they placed\n\nReturn the lines as a `string[]`.',
+        difficulty: 'hard',
+        examples: [
+          {
+            input: '["Alice|2:60.00", "Bob|1:50.00", "Alice|1:50.00"]',
+            output: '["Alice: $164.00 (2 orders)", "Bob: $50.00 (1 orders)"]',
+            explanation: 'Alice: 114 + 50 = 164. Bob: 50.',
+          },
+          { input: '[]', output: '[]' },
+        ],
+        functionName: 'CustomerSummary',
+        starterCode: `using System;
+using System.Linq;
+using System.Globalization;
+using System.Collections.Generic;
+
+public class Solution
+{
+    public string[] CustomerSummary(string[] orders)
+    {
+        // your code here
+        return new string[0];
+    }
+}`,
+        solution: `using System;
+using System.Linq;
+using System.Globalization;
+using System.Collections.Generic;
+
+public class Solution
+{
+    public string[] CustomerSummary(string[] orders)
+    {
+        var totals = new Dictionary<string, decimal>();
+        var counts = new Dictionary<string, int>();
+
+        foreach (var o in orders)
+        {
+            var parts = o.Split('|');
+            string name = parts[0];
+            decimal subtotal = 0m;
+            foreach (var line in parts[1].Split(','))
+            {
+                var qp = line.Split(':');
+                subtotal += int.Parse(qp[0]) * decimal.Parse(qp[1], CultureInfo.InvariantCulture);
+            }
+            decimal discount = subtotal >= 500m ? 0.10m : subtotal >= 100m ? 0.05m : 0m;
+            decimal total = subtotal * (1m - discount);
+
+            if (totals.ContainsKey(name)) { totals[name] += total; counts[name]++; }
+            else { totals[name] = total; counts[name] = 1; }
+        }
+
+        return totals
+            .OrderBy(kv => kv.Key)
+            .Select(kv => kv.Key + ": $" + kv.Value.ToString("F2", CultureInfo.InvariantCulture) + " (" + counts[kv.Key] + " orders)")
+            .ToArray();
+    }
+}`,
+        testCases: [
+          {
+            input: '["Alice|2:60.00", "Bob|1:50.00", "Alice|1:50.00"]',
+            expected: '["Alice: $164.00 (2 orders)", "Bob: $50.00 (1 orders)"]',
+            description: 'Two customers, Alice has two orders'
+          },
+          { input: '[]', expected: '[]', description: 'No orders' },
+          {
+            input: '["Z|1:10", "A|1:10", "M|1:10"]',
+            expected: '["A: $10.00 (1 orders)", "M: $10.00 (1 orders)", "Z: $10.00 (1 orders)"]',
+            description: 'Alphabetical sort'
+          },
+          {
+            input: '["Solo|10:60.00"]',
+            expected: '["Solo: $540.00 (1 orders)"]',
+            description: 'Single customer with discount applied'
+          },
+        ],
+        hints: [
+          'Two parallel dictionaries: totals (decimal) and counts (int) keyed by name',
+          'For each order, accumulate the discounted total AND increment the count',
+          'OrderBy(kv => kv.Key) for alphabetical order',
+          'Format each row: name + ": $" + total.ToString("F2", invariant) + " (" + count + " orders)"',
+        ],
+      },
+    },
+    {
+      id: 'l-fin-quiz',
+      title: 'You did it',
+      type: 'theory',
+      xp: 50,
+      theory: `# 🎓 Path Complete
+
+If all five capstone challenges turned green, you have walked the full path:
+
+- **Foundations** — syntax, types, control flow, methods, arrays, strings, console I/O
+- **OOP** — classes, inheritance, polymorphism, interfaces, access modifiers, enums
+- **Generics & Collections** — \`T\`, constraints, Dictionary, HashSet, Queue, Stack, LINQ
+- **Modern Language** — null safety, value vs reference, IDisposable, async/await, threading, pattern matching
+- **Advanced** — tuples, iterators, reflection, records, variance
+- **Ecosystem** — config, logging, DI, ASP.NET Core, EF Core
+- **Specialist** — CLR/GC, performance, observability, architecture, distributed systems
+
+## What now
+
+Some directions worth pursuing locally on your machine:
+
+1. **Build a real ASP.NET Core API** end-to-end — auth + EF Core + a deployable Docker image
+2. **Try Native AOT** — pick a CLI tool you wrote, publish AOT, observe the startup difference
+3. **Write a Roslyn analyzer** — even a simple "warn on TODO comments" rule. Demystifies how the compiler sees your code.
+4. **Profile something real** — pick an app, attach \`dotnet-counters\`, find one bottleneck, fix it
+5. **Contribute** — \`dotnet/runtime\` and \`dotnet/aspnetcore\` welcome small fixes; the maintainers are responsive
+
+The platform isn't going anywhere — come back for refreshers.`,
+    },
+  ],
+};
+
 // __END_CHAPTERS__
 
 export const csharpCourse: Course = {
@@ -10074,6 +11239,7 @@ export const csharpCourse: Course = {
     ch6Methods,
     chMethodParams,
     chConsoleIO,
+    chMilestone1,
     ch7Collections,
     chCollections,
     ch8Strings,
@@ -10082,6 +11248,7 @@ export const csharpCourse: Course = {
     chAccess,
     chEnums,
     ch10Inheritance,
+    chMilestone2,
     chGenerics,
     chDelegates,
     chNRT,
@@ -10089,6 +11256,7 @@ export const csharpCourse: Course = {
     chDisposable,
     ch11Linq,
     chAdvLinq,
+    chMilestone3,
     chAsync,
     chTask,
     chThreading,
@@ -10111,5 +11279,6 @@ export const csharpCourse: Course = {
     chObs,
     chArch,
     chDist,
+    chFinalCapstone,
   ],
 };
