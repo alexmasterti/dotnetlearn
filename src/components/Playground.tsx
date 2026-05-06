@@ -283,6 +283,26 @@ export function Playground() {
     ? new Map(Array.from(currentFrame.variables.entries()).map(([n, v]) => [n, v.value]))
     : null;
 
+  // Walk back from the current frame, picking up one frame at each lower
+  // depth — that gives us the chain of method calls leading here. Returned
+  // top-down (deepest first), so the UI can render bottom-up like VS Code's
+  // call stack.
+  const callStack = useMemo(() => {
+    if (!currentFrame || frameIdx <= 0) return [];
+    const stack: { method: string; line: number; depth: number }[] = [];
+    let cur = currentFrame;
+    stack.push({ method: cur.method, line: cur.line, depth: cur.depth });
+    let i = frameIdx - 2;
+    while (i >= 0 && cur.depth > 1) {
+      while (i >= 0 && frames[i].depth >= cur.depth) i -= 1;
+      if (i < 0) break;
+      cur = frames[i];
+      stack.push({ method: cur.method, line: cur.line, depth: cur.depth });
+      i -= 1;
+    }
+    return stack;
+  }, [currentFrame, frameIdx, frames]);
+
   // While stepping, show only the output produced up to the current frame
   // so it appears progressively (matches a real debugger). Outside debug
   // mode or after the last frame, show the full captured output.
@@ -475,9 +495,37 @@ export function Playground() {
           )}
         </div>
 
-        {/* Variables panel */}
+        {/* Variables + Call Stack panel */}
         {inDebugger && (
-          <div className="bg-dark-800 rounded-xl border border-purple-500/30 p-4 min-h-[180px] max-h-[260px] overflow-y-auto">
+          <div className="bg-dark-800 rounded-xl border border-purple-500/30 p-4 min-h-[180px] max-h-[320px] overflow-y-auto">
+            {callStack.length > 0 && (
+              <div className="mb-4 pb-3 border-b border-dark-700">
+                <div className="text-xs text-purple-400 uppercase tracking-wider mb-2">
+                  Call Stack
+                </div>
+                <div className="space-y-0.5">
+                  {/* Render bottom-up: caller first, current method last (matches VS Code). */}
+                  {[...callStack].reverse().map((f, i) => {
+                    const isCurrent = i === callStack.length - 1;
+                    return (
+                      <div
+                        key={`${f.method}-${i}`}
+                        className={`flex items-center gap-2 text-xs font-mono ${
+                          isCurrent ? 'text-amber-300' : 'text-slate-400'
+                        }`}
+                      >
+                        <span className="text-slate-600 w-4 text-right">{i + 1}</span>
+                        <span className="flex-1 truncate" title={`${f.method} at line ${f.line}`}>
+                          {isCurrent && <span className="text-amber-500 mr-1">▶</span>}
+                          {f.method || '<top>'}
+                        </span>
+                        <span className="text-slate-600 text-[10px]">L{f.line}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="text-xs text-purple-400 uppercase tracking-wider mb-2">Variables</div>
             {variablesAtCurrent.length === 0 ? (
               <div className="text-xs text-slate-600 italic">No variables yet at this point.</div>
