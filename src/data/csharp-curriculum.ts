@@ -8011,6 +8011,77 @@ class Program
       },
     },
     {
+      id: 'l-modern-capstone',
+      title: 'Capstone: Modern C# Order Processor',
+      type: 'code',
+      xp: 60,
+      codeExercise: {
+        instructions: 'A small project tying together everything in this chapter. Build an order processor that:\n\n1. Defines `record Order(int Id, string Customer, decimal Amount, OrderStatus Status)` and an `enum OrderStatus { Pending, Shipped, Cancelled }`.\n2. Calculates an effective amount per order using a **switch expression** on status:\n   - Pending → full amount\n   - Shipped → 10% loyalty discount (amount × 0.9)\n   - Cancelled → 0\n3. Uses **LINQ** to compute the grand total across the four sample orders.\n4. Prints `"Total: <amount>"` formatted to 2 decimals with InvariantCulture.\n\nThe sample orders are wired up in `Main()`. Fill in the record, enum, helper method, and total calculation.\n\nExpected output:\n```\nTotal: 51.50\n```',
+        starterCode: `using System;
+using System.Globalization;
+using System.Linq;
+
+// 1. Define enum OrderStatus { Pending, Shipped, Cancelled }
+// 2. Define record Order(int Id, string Customer, decimal Amount, OrderStatus Status)
+
+class Program
+{
+    // 3. static decimal Effective(Order o) using a switch expression
+
+    static void Main()
+    {
+        // var orders = new[] {
+        //     new Order(1, "Alice", 20m, OrderStatus.Pending),
+        //     new Order(2, "Bob",   30m, OrderStatus.Shipped),
+        //     new Order(3, "Cara",  10m, OrderStatus.Cancelled),
+        //     new Order(4, "Dan",   5m,  OrderStatus.Shipped),
+        // };
+        // 4. decimal total = orders.Sum(Effective);
+        // Console.WriteLine($"Total: {total.ToString("F2", CultureInfo.InvariantCulture)}");
+    }
+}
+`,
+        solution: `using System;
+using System.Globalization;
+using System.Linq;
+
+enum OrderStatus { Pending, Shipped, Cancelled }
+record Order(int Id, string Customer, decimal Amount, OrderStatus Status);
+
+class Program
+{
+    static decimal Effective(Order o) => o.Status switch
+    {
+        OrderStatus.Pending   => o.Amount,
+        OrderStatus.Shipped   => o.Amount * 0.9m,
+        OrderStatus.Cancelled => 0m,
+        _                     => 0m,
+    };
+
+    static void Main()
+    {
+        var orders = new[]
+        {
+            new Order(1, "Alice", 20m, OrderStatus.Pending),
+            new Order(2, "Bob",   30m, OrderStatus.Shipped),
+            new Order(3, "Cara",  10m, OrderStatus.Cancelled),
+            new Order(4, "Dan",   5m,  OrderStatus.Shipped),
+        };
+
+        decimal total = orders.Sum(Effective);
+        Console.WriteLine($"Total: {total.ToString("F2", CultureInfo.InvariantCulture)}");
+    }
+}`,
+        tests: [{ expectedOutput: 'Total: 51.50', description: '20 + 30*0.9 + 0 + 5*0.9 = 51.50' }],
+        hints: [
+          'Records and enums go at the top level (outside Program). The record can be a single line.',
+          'Switch expression: `o.Status switch { OrderStatus.Pending => o.Amount, ... }`',
+          'Pass the method group directly to Sum: `orders.Sum(Effective)`',
+          'Use `decimal` (not double) for money — and write `0.9m` not `0.9`',
+        ],
+      },
+    },
+    {
       id: 'l-rec-2',
       title: 'Records Quiz',
       type: 'quiz',
