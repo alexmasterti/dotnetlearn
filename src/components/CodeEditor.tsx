@@ -90,14 +90,29 @@ const wordHover = hoverTooltip((view, pos) => {
   const text = lineObj.text;
   const offset = pos - lineObj.from;
   const isWord = (ch: string) => /[A-Za-z0-9_]/.test(ch);
-  if (offset < 0 || offset >= text.length || !isWord(text[offset])) return null;
+  const isPath = (ch: string) => isWord(ch) || ch === '.';
+  if (offset < 0 || offset >= text.length || !isPath(text[offset])) return null;
   let start = offset;
   let end = offset;
-  while (start > 0 && isWord(text[start - 1])) start--;
-  while (end < text.length && isWord(text[end])) end++;
-  const word = text.slice(start, end);
+  while (start > 0 && isPath(text[start - 1])) start--;
+  while (end < text.length && isPath(text[end])) end++;
+  let word = text.slice(start, end);
+  // Trim leading/trailing dots so `.foo` or `foo.` don't slip through.
+  word = word.replace(/^\.+|\.+$/g, '');
   if (!word || /^\d/.test(word)) return null;
-  const value = vars.get(word);
+  let value = vars.get(word);
+  // Fall back to the segment under the cursor (e.g. user hovered `id` in
+  // `obj.id` but only `obj` is in vars — try walking from the word back).
+  if (value === undefined && word.includes('.')) {
+    const segs = word.split('.');
+    for (let n = segs.length; n >= 1 && value === undefined; n--) {
+      value = vars.get(segs.slice(0, n).join('.'));
+      if (value !== undefined) {
+        word = segs.slice(0, n).join('.');
+        break;
+      }
+    }
+  }
   if (value === undefined) return null;
   return {
     pos: lineObj.from + start,

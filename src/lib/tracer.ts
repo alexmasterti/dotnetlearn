@@ -254,7 +254,9 @@ internal static class __Tracer
         if (_count >= ${MAX_TRACE_PER_RUN}) return value;
         _count++;
         _step++;
-        System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|" + name + "|" + Format((object)value));
+        var v = (object)value;
+        System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|" + name + "|" + Format(v));
+        DumpFields(line, method, name, v);
         return value;
     }
     public static void Pos(int line, string method)
@@ -263,6 +265,62 @@ internal static class __Tracer
         _count++;
         _step++;
         System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|${POS_MARKER}|");
+    }
+    static bool IsSimple(System.Type t)
+    {
+        if (t == null) return false;
+        var nt = System.Nullable.GetUnderlyingType(t);
+        if (nt != null) t = nt;
+        if (t.IsPrimitive) return true;
+        if (t.IsEnum) return true;
+        if (t == typeof(string) || t == typeof(decimal)) return true;
+        return false;
+    }
+    static void DumpFields(int line, string method, string baseName, object v)
+    {
+        if (v == null) return;
+        var t = v.GetType();
+        if (IsSimple(t)) return;
+        if (v is System.Collections.IEnumerable) return;
+        if (t.Namespace != null && t.Namespace.StartsWith("System")) return;
+        try
+        {
+            var flags = System.Reflection.BindingFlags.Instance
+                      | System.Reflection.BindingFlags.Public
+                      | System.Reflection.BindingFlags.NonPublic;
+            var seen = new System.Collections.Generic.HashSet<string>();
+            var fields = t.GetFields(flags);
+            for (int i = 0; i < fields.Length; i++)
+            {
+                var f = fields[i];
+                if (f.IsStatic) continue;
+                if (f.Name.Length > 0 && f.Name[0] == '<') continue;
+                if (!IsSimple(f.FieldType)) continue;
+                object fv;
+                try { fv = f.GetValue(v); } catch { continue; }
+                if (_count >= ${MAX_TRACE_PER_RUN}) return;
+                _count++;
+                _step++;
+                seen.Add(f.Name);
+                System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|" + baseName + "." + f.Name + "|" + Format(fv));
+            }
+            var props = t.GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+            for (int i = 0; i < props.Length; i++)
+            {
+                var p = props[i];
+                if (!p.CanRead) continue;
+                if (seen.Contains(p.Name)) continue;
+                if (p.GetIndexParameters().Length > 0) continue;
+                if (!IsSimple(p.PropertyType)) continue;
+                object pv;
+                try { pv = p.GetValue(v, null); } catch { continue; }
+                if (_count >= ${MAX_TRACE_PER_RUN}) return;
+                _count++;
+                _step++;
+                System.Console.WriteLine("${TRACE_MARKER}" + _step + "|" + line + "|" + method + "|" + baseName + "." + p.Name + "|" + Format(pv));
+            }
+        }
+        catch { }
     }
     static string Format(object v)
     {

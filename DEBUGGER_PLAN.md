@@ -18,44 +18,16 @@ the current approach so the next session can pick up.
 
 ## Known issues (reported by user, NOT yet fixed)
 
-### 1. Object variables show only ToString (not field-by-field)
+### 1. Object variables show only ToString (not field-by-field) — DONE
 
-`obj` for a `Vehicule` instance currently shows as `obj = Vehicule` (the
-default ToString result). The user expects:
-
-```
-obj.id = 1
-obj.model = ""
-```
-
-**Why:** The tracer's `__Tracer.Mark` emits one line per variable with
-`value.ToString()`. For classes that don't override ToString, that's just the
-type name.
-
-**Fix options:**
-- **A. Reflection-based field dump.** When a non-primitive object is Mark'd,
-  use `value.GetType().GetFields()` and `GetProperties()` to enumerate fields
-  and emit `__TRACE__:...|obj.id|1` etc. Need to recurse for nested objects
-  with a depth limit. Risk: cycles, slow for large object graphs, mono 6.12
-  reflection might handle some shapes oddly.
-- **B. Snapshot-on-demand.** When the user hovers over an object, fetch its
-  current state by re-running with extra instrumentation focused on that
-  variable. Heavier, more accurate.
-- **C. Manual tag.** Document a `__Tracer.Inspect(obj)` helper users can call
-  when they want object internals. Punts the work to the user.
-
-**Recommendation:** Option A with depth=1, primitive fields only, defensive
-try/catch around reflection. Acceptable for typical learning code.
-
-Implementation hints:
-- In `TRACER_FOOTER`, change `Format` to detect non-primitive ref types and,
-  for each public field/property of primitive type, append `name.field=value`
-  in the output.
-- Or emit MULTIPLE `__TRACE__` lines per Mark when the value is a class:
-  one per field. Frame parser already accumulates per-name; field syntax
-  `obj.id` would just become a separate variable name in the panel.
-- Watch out for the `Vehicule` private fields — `BindingFlags.Instance |
-  BindingFlags.Public | BindingFlags.NonPublic` is needed.
+Resolved by emitting reflection-based field/property dump for non-primitive,
+non-IEnumerable, non-System-namespace types. Each Mark of an object emits the
+parent line plus one trace line per simple-typed field/property
+(`obj.id = 1`, `obj.model = ""`). Auto-property backing fields (names starting
+with `<`) are filtered, then properties cover the public surface. Nested class
+fields are skipped (depth=1) to avoid cycles. Implementation in
+`TRACER_FOOTER` of `src/lib/tracer.ts`. CodeEditor hover updated to walk
+dotted identifiers (`obj.id`) and fall back to parent on miss.
 
 ### 2. Step Over stuck inside callees
 
@@ -173,13 +145,10 @@ Document those clearly so users aren't surprised.
 
 ## Suggested next-session order
 
-1. **Fix #1 (object field display)** — highest user value, well-scoped change
-   to `Format` in TRACER_FOOTER. ~1 hour.
+1. ~~Fix #1 (object field display)~~ — **DONE.** See above.
 2. **Fix #2 (call-depth tracking + try/finally injection)** — fixes Step
    Over recursion + edge cases properly. ~2-3 hours including testing.
 3. **Fix #3 (per-scope variables)** — falls out of #2 with extra `Leave`
    markers. ~30 min.
 4. Optional: **VS-code-tab-style call stack panel.** Shows the chain of
    method calls leading to the current frame. UI-only once #2 is done.
-
-If time is short, ship #1 standalone for the visible win.
