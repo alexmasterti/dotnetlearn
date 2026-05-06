@@ -1,7 +1,11 @@
 import { useState, useCallback } from 'react';
 
-const WANDBOX_URL = 'https://wandbox.org/api/compile.json';
-const COMPILER = 'mono-6.12.0.199';
+// .NET 9 runner — self-hosted ASP.NET Core minimal API on Railway.
+// Falls back to the Railway runner URL if the env var isn't injected at
+// build time (the typical Railway dotnetlearn build sets it).
+const RUNNER_URL =
+  import.meta.env.VITE_RUNNER_URL ||
+  'https://runner-net9-production.up.railway.app';
 
 export interface DiagnosticItem {
   line: number;
@@ -20,15 +24,19 @@ export interface RunResult {
   stack?: string;
 }
 
-interface WandboxResponse {
-  status?: string;
-  signal?: string;
-  compiler_output?: string;
-  compiler_error?: string;
-  compiler_message?: string;
-  program_output?: string;
-  program_error?: string;
-  program_message?: string;
+interface RunnerResponse {
+  stdout: string;
+  stderr: string;
+  diagnostics: Array<{
+    line: number;
+    column: number;
+    severity: string; // "error" | "warning"
+    code: string;
+    message: string;
+  }>;
+  exitCode: number;
+  timedOut: boolean;
+  compileFailed: boolean;
 }
 
 export function useCSharpRunner() {
@@ -38,10 +46,10 @@ export function useCSharpRunner() {
     setLoading(true);
 
     try {
-      const response = await fetch(WANDBOX_URL, {
+      const response = await fetch(`${RUNNER_URL}/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, compiler: COMPILER, save: false }),
+        body: JSON.stringify({ code }),
       });
 
       if (!response.ok) {
@@ -52,37 +60,46 @@ export function useCSharpRunner() {
         };
       }
 
-      const data: WandboxResponse = await response.json();
+      const data: RunnerResponse = await response.json();
       setLoading(false);
 
-      const compileText = (data.compiler_error || '').trim();
-      const diagnostics = compileText ? parseCSharpDiagnostics(compileText) : [];
+      const diagnostics: DiagnosticItem[] = data.diagnostics.map((d) => ({
+        line: d.line,
+        column: d.column,
+        code: d.code,
+        severity: d.severity === 'error' ? 'error' : 'warning',
+        message: d.message,
+      }));
       const errorDiagnostics = diagnostics.filter((d) => d.severity === 'error');
 
-      // Real compile failure: there are error diagnostics, OR there's compiler text
-      // we couldn't parse (defensive — better to surface than silently swallow).
-      if (errorDiagnostics.length > 0 || (compileText && diagnostics.length === 0)) {
+      if (data.compileFailed || errorDiagnostics.length > 0) {
         const friendly = diagnostics.length > 0
           ? formatDiagnostics(diagnostics)
-          : cleanError(compileText);
+          : cleanError(data.stderr || 'Compilation failed.');
         return { output: '', error: friendly, diagnostics };
       }
 
-      // From here, compilation succeeded. Warnings (if any) ride along in `diagnostics`
-      // so the UI can show them as info, but they don't block running the program.
+      const programOut = (data.stdout || '').replace(/\n$/, '');
+      const runtimeText = (data.stderr || '').trim();
 
-      const runtimeText = (data.program_error || '').trim();
-      const programOut = (data.program_output || '').replace(/\n$/, '');
+      if (data.timedOut) {
+        return {
+          output: programOut,
+          error: 'Execution timed out (15s limit). Check for infinite loops.',
+          diagnostics,
+        };
+      }
 
-      // Mono prints "Unhandled Exception:" to program_error on runtime crashes
+      // .NET prints "Unhandled exception." then the exception type/message and a stack
+      // to stderr on runtime crashes. exitCode reflects the abort signal (often 134).
       if (runtimeText && /Exception/.test(runtimeText)) {
         const { message, stack } = parseRuntimeError(runtimeText);
         return { output: programOut, error: message, stack, diagnostics };
       }
 
-      // Non-zero exit code without an exception trace
-      if (data.status && data.status !== '0') {
-        const errText = runtimeText || `Process exited with status ${data.status}.`;
+      // Non-zero exit code without an exception trace — surface stderr if present.
+      if (data.exitCode !== 0) {
+        const errText = runtimeText || `Process exited with code ${data.exitCode}.`;
         return { output: programOut, error: cleanError(errText), diagnostics };
       }
 
@@ -97,27 +114,6 @@ export function useCSharpRunner() {
   }, []);
 
   return { runCode, loading, ready: true };
-}
-
-/**
- * Parse Roslyn/mcs-style compile output:
- *   prog.cs(7,21): error CS1002: ; expected
- *   /tmp/.../Program.cs(7,21): error CS1002: ; expected
- */
-function parseCSharpDiagnostics(text: string): DiagnosticItem[] {
-  const items: DiagnosticItem[] = [];
-  const re = /(?:^|\s|\/)(?:Program|prog)\.cs\((\d+),(\d+)\):\s*(error|warning)\s+([A-Z]+\d+):\s*(.+?)(?=(?:\n(?:\s|\/)*(?:Program|prog)\.cs\()|\n\n|$)/gms;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    items.push({
-      line: parseInt(m[1], 10),
-      column: parseInt(m[2], 10),
-      severity: m[3] as 'error' | 'warning',
-      code: m[4],
-      message: m[5].replace(/\s+/g, ' ').trim(),
-    });
-  }
-  return items;
 }
 
 function formatDiagnostics(items: DiagnosticItem[]): string {
@@ -144,11 +140,11 @@ function formatDiagnostics(items: DiagnosticItem[]): string {
 function parseRuntimeError(stderr: string): { message: string; stack: string } {
   const cleaned = cleanError(stderr);
   const lines = cleaned.split('\n');
-  const headLine = lines.find((l) => /Exception:/.test(l)) || lines[0] || cleaned;
+  const headLine = lines.find((l) => /Exception/.test(l)) || lines[0] || cleaned;
   const stackLines = lines.filter((l) => /^\s+at\s+/.test(l));
   const stack = stackLines.join('\n');
 
-  const lineMatch = stack.match(/(?:Program|prog)\.cs[:(](?:line\s*)?(\d+)/i);
+  const lineMatch = stack.match(/Program\.cs[:(](?:line\s*)?(\d+)/i);
   const lineHint = lineMatch ? ` (Line ${lineMatch[1]})` : '';
   return {
     message: `${headLine.trim()}${lineHint}`,
@@ -158,9 +154,9 @@ function parseRuntimeError(stderr: string): { message: string; stack: string } {
 
 function cleanError(err: string): string {
   return err
-    .replace(/\/tmp\/[a-f0-9-]+\//g, '')
-    .replace(/\/private\/tmp\/[a-f0-9-]+\//g, '')
-    .replace(/(?:Program|prog)\.cs\((\d+),(\d+)\)/g, 'Program.cs(Line $1, Col $2)')
+    .replace(/\/tmp\/run-[a-f0-9]+\//g, '')
+    .replace(/\/private\/var\/folders\/[^\s]+\/T\/run-[a-f0-9]+\//g, '')
+    .replace(/Program\.cs[:(](?:line\s*)?(\d+)\)?/g, 'Program.cs(Line $1)')
     .trim();
 }
 

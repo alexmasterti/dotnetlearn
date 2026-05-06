@@ -363,6 +363,7 @@ function traceCall(lineNo: number, varName: string, method: string): string {
 }
 
 const TRACER_FOOTER = `// === auto-injected by DotNetLearn ===
+#nullable disable
 internal static class __Tracer
 {
     static int _step = 0;
